@@ -17,13 +17,13 @@ import tkinter.font as tkfont
 import unicodedata
 import zipfile
 import xml.etree.ElementTree as ET
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from tkinter import colorchooser, filedialog, messagebox, ttk
 
 APP_TITLE = "Nöbetçi Eczane Paneli"
 DEVICE_PREFIX = "LED_BLE_"
-DUTY_LOGO_REPLAY_SECONDS = 10.0
+AUTO_SCAN_MISSES_FOR_OFFLINE = 2
 ANIMATIONS = {
     "Sabit": 0,
     "Sola kaydır": 1,
@@ -51,6 +51,23 @@ def parse_date(value: str) -> date:
         except ValueError:
             pass
     raise ValueError(f"Tarih okunamadı: {value}")
+
+
+def active_duty_date(now: datetime | None = None) -> date:
+    """Return the roster date whose duty window contains local time now.
+
+    Ordinary shifts run from 18:00 to 08:30 the next morning. Sunday's
+    continuous shift starts at 08:30 Sunday and ends at 08:30 Monday.
+    Between 08:30 and 18:00 on ordinary days, keep showing the prior shift.
+    """
+    now = now or datetime.now().astimezone()
+    current = now.date()
+    at = now.timetz().replace(tzinfo=None)
+    if current.weekday() == 6 and at >= time(8, 30):
+        return current
+    if at >= time(18, 0):
+        return current
+    return current - timedelta(days=1)
 
 
 def canonical_record(raw: dict) -> dict:
@@ -208,13 +225,14 @@ def make_duty_logo_gif(text: str, options: dict, width: int, height: int) -> str
     palette_image.putpalette(palette_data)
     gif_frames = [frame.quantize(palette=palette_image, dither=Image.Dither.NONE) for frame in frames]
     out = Path(tempfile.gettempdir()) / f"nobet-duty-logo-{os.getpid()}.gif"
-    gif_frames[0].save(out, format="GIF", save_all=True, append_images=gif_frames[1:], duration=duration, loop=65535, disposal=2, optimize=True)
+    # GIF loop=0 requests continuous playback. Reuploading the animation on a
+    # timer interrupts playback and keeps the BLE connection busy.
+    gif_frames[0].save(out, format="GIF", save_all=True, append_images=gif_frames[1:], duration=duration, loop=0, disposal=2, optimize=True)
     return str(out)
 
 
 async def send_prepared_logo_gif(client, path: str, save_slot: int):
-    """Send a native-size, compact GIF without pypixelcolor's GIF re-encode pass."""
-    # Let pypixelcolor normalize GIF palettes and per-frame disposal/timing.
+    """Upload a prepared animation or image to the requested panel slot."""
     await client.send_image(path, resize_method="fit", save_slot=save_slot)
 
 
@@ -351,10 +369,9 @@ class PharmacyPanelApp:
             "mirror_horizontal": False,
         }
         self.busy = False
-        self.logo_stop_event = threading.Event()
         self.preview_offset = 0
         self.preview_phase = 0
-        self.view_month = date.today().replace(day=1)
+        self.view_month = active_duty_date().replace(day=1)
         self.status_queue: queue.Queue = queue.Queue()
         self._load()
         if "--minimized" in sys.argv:
@@ -368,6 +385,7 @@ class PharmacyPanelApp:
         self._poll_status()
         self._auto_device_online = False
         self._auto_reconnect_pending = False
+        self._auto_scan_misses = 0
         self._auto_scan_busy = False
         self._check_daily_send()
         self.root.protocol("WM_DELETE_WINDOW", self._close)
@@ -466,7 +484,7 @@ class PharmacyPanelApp:
 
         form = ttk.Frame(left, style="Card.TFrame")
         form.pack(fill="x", pady=(12, 2))
-        self.date_var = tk.StringVar(value=date.today().isoformat())
+        self.date_var = tk.StringVar(value=active_duty_date().isoformat())
         self.pharmacy_var = tk.StringVar()
         self.free_mode_var = tk.BooleanVar(value=bool(self.settings.get("free_mode", False)))
         self.free_text_var = tk.StringVar(value=str(self.settings.get("free_text", "")))
@@ -540,7 +558,7 @@ class PharmacyPanelApp:
         month_records = {parse_date(r["date"]).day: r for r in self.records if parse_date(r["date"]).year == self.view_month.year and parse_date(r["date"]).month == self.view_month.month}
         offset = calendar.monthrange(self.view_month.year, self.view_month.month)[0]
         days = calendar.monthrange(self.view_month.year, self.view_month.month)[1]
-        today_iso = date.today().isoformat()
+        today_iso = active_duty_date().isoformat()
         selected_iso = ""
         try:
             selected_iso = parse_date(self.date_var.get()).isoformat()
@@ -818,8 +836,6 @@ class PharmacyPanelApp:
         ttk.Label(panel, text="Kayıttaki eczane adıyla eşleşirse bugünün liste yazısı yerine seçili kaydırma efektiyle bu mesaj gönderilir.", style="Sub.TLabel", wraplength=320).pack(anchor="w")
         self.roster_logo_var = tk.BooleanVar(value=bool(self.settings.get("roster_logo_enabled", False)))
         ttk.Checkbutton(panel, text="Kayan nöbet listesinde E logosu göster (isteğe bağlı)", variable=self.roster_logo_var, command=self._save_control_settings).pack(anchor="w", pady=(4, 3))
-        self.logo_stop_button = ttk.Button(panel, text="Logolu kaydırmayı durdur", command=self._stop_logo_animation, state="disabled")
-        self.logo_stop_button.pack(fill="x", pady=(2, 5))
         ttk.Label(panel, text="Kırmızı E, beyaz çevre ve yanıp sönen kırmızı çerçeve; nöbet listesi GIF animasyonu olarak gönderilir.", style="Sub.TLabel", wraplength=320).pack(anchor="w")
         self.startup_var = tk.BooleanVar(value=self._startup_enabled())
         ttk.Checkbutton(panel, text="Windows açılışında küçültülmüş başlat", variable=self.startup_var, command=self._toggle_startup).pack(anchor="w", pady=(8, 3))
@@ -842,10 +858,15 @@ class PharmacyPanelApp:
         callback()
 
     def _persist_device_name(self, _event=None):
-        self.settings["device_name"] = self.device_var.get().strip()
+        selected = self.device_var.get().strip()
+        if selected != self.settings.get("device_name", ""):
+            self.settings["device_address"] = ""
+        self.settings["device_name"] = selected
         self._save()
 
     def _save_control_settings(self):
+        if self.device_var.get().strip() != self.settings.get("device_name", ""):
+            self.settings["device_address"] = ""
         self.settings.update({
             "device_name": self.device_var.get().strip(),
             "brightness": self.brightness_var.get(),
@@ -870,6 +891,7 @@ class PharmacyPanelApp:
         if not self.auto_var.get() and hasattr(self, "_auto_device_online"):
             self._auto_device_online = False
             self._auto_reconnect_pending = True
+            self._auto_scan_misses = 0
         self._save()
         self._update_preview()
 
@@ -1098,18 +1120,20 @@ class PharmacyPanelApp:
                 break
 
     def _select_today_record(self):
-        self.view_month = date.today().replace(day=1)
-        self.date_var.set(date.today().isoformat())
-        self._select_date_in_table(date.today().isoformat())
+        duty_day = active_duty_date().isoformat()
+        self.view_month = parse_date(duty_day).replace(day=1)
+        self.date_var.set(duty_day)
+        self._select_date_in_table(duty_day)
         self._update_preview()
 
     def _clear_form(self):
         self.pharmacy_var.set("")
 
     def set_today(self):
-        self.view_month = date.today().replace(day=1)
-        self.date_var.set(date.today().isoformat())
-        self._select_date_in_table(date.today().isoformat())
+        duty_day = active_duty_date().isoformat()
+        self.view_month = parse_date(duty_day).replace(day=1)
+        self.date_var.set(duty_day)
+        self._select_date_in_table(duty_day)
         self._refresh_calendar()
 
     def import_bulk(self):
@@ -1142,7 +1166,7 @@ class PharmacyPanelApp:
         self.records = sorted(by_date.values(), key=lambda r: r["date"])
         self._save()
         self._refresh_table()
-        self._select_date_in_table(date.today().isoformat())
+        self._select_date_in_table(active_duty_date().isoformat())
         self._update_preview()
         summary = f"{len(imported)} kayıt içe alındı."
         if errors:
@@ -1188,7 +1212,7 @@ class PharmacyPanelApp:
             self.records = sorted(by_date.values(), key=lambda r: r["date"])
             self._save()
             self._refresh_table()
-            self._select_date_in_table(date.today().isoformat())
+            self._select_date_in_table(active_duty_date().isoformat())
             self._update_preview()
             summary = f"{len(imported)} günlük nöbet kaydı içe alındı. Aynı tarihteki iki eczane adı birlikte korundu.\n\nGönderim metninde adres kullanılmaz."
             messagebox.showinfo(APP_TITLE, summary)
@@ -1229,11 +1253,11 @@ class PharmacyPanelApp:
             self._save_control_settings()
 
     def _selected_record(self, for_today=False):
-        iso = date.today().isoformat() if for_today else parse_date(self.date_var.get()).isoformat()
+        iso = active_duty_date().isoformat() if for_today else parse_date(self.date_var.get()).isoformat()
         return next((r for r in self.records if r["date"] == iso), None)
 
     def _own_duty_message(self, rec, preview=False):
-        if not rec or (not preview and rec.get("date") != date.today().isoformat()):
+        if not rec or (not preview and rec.get("date") != active_duty_date().isoformat()):
             return None
         if not self.own_duty_message_var.get():
             return None
@@ -1399,11 +1423,7 @@ class PharmacyPanelApp:
             "mirror_vertical": self.mirror_vertical_var.get(),
         }
 
-    def _stop_logo_animation(self):
-        self.logo_stop_event.set()
-        self._set_status("Logolu kaydırma durduruluyor…")
-
-    def _send_record(self, rec, message, on_success=None):
+    def _send_record(self, rec, message, on_success=None, device=None, automatic=False):
         self._save_control_settings()
         special = self._own_duty_message(rec)
         text = special or format_display(rec)
@@ -1416,16 +1436,23 @@ class PharmacyPanelApp:
             if on_success:
                 on_success(result)
         options = self._send_options()
+        if device:
+            options["device_name"], options["device_address"] = device
         options["duty_logo"] = bool(special or self.roster_logo_var.get())
         if options["duty_logo"]:
-            # Keep the selected saved copy, but use the live display slot so
-            # firmware does not switch back to its boot screen after show_slot.
+            # A compact text fallback lives in the saved slot. The animated
+            # GIF is sent only once to the live slot; two GIF transfers in a
+            # row can exhaust this panel's BLE connection.
             options["save_slot"] = max(1, int(options.get("save_slot", 1)))
-            options["_stop_event"] = self.logo_stop_event
-            self.logo_stop_event.clear()
-            self.logo_stop_button.configure(state="normal")
             message = "E logolu kayan nöbet listesi canlı ekranda başlatılıyor…"
-        self._background(self._send_async(text, options), message, completed)
+        on_error = None
+        if automatic:
+            def retry_after_error(exc):
+                self._auto_device_online = False
+                self._auto_reconnect_pending = True
+                self._set_status(f"Panel gönderimi başarısız; bağlantı yeniden aranacak. ({type(exc).__name__})")
+            on_error = retry_after_error
+        self._background(self._send_async(text, options), message, completed, on_error)
 
     def _remember_slot(self, text, options, result):
         slot = int(options.get("save_slot", 0))
@@ -1437,68 +1464,69 @@ class PharmacyPanelApp:
     async def _send_async(self, text, options):
         from bleak import BleakScanner
         from pypixelcolor import AsyncClient
-        devices = await BleakScanner.discover(timeout=7)
-        compatible = [d for d in devices if d.name and d.name.startswith(DEVICE_PREFIX)]
-        preferred = options.get("device_name", "")
-        match = next((d for d in compatible if preferred and d.name == preferred), None) or (compatible[0] if compatible else None)
-        if not match:
-            raise RuntimeError(f"{DEVICE_PREFIX} ile başlayan uyumlu panel bulunamadı. Paneli açın ve telefon bağlantısını kapatın.")
-        async with AsyncClient(match.address) as client:
-            await client.set_brightness(options["brightness"])
-            await client.set_orientation(options.get("orientation", 0))
-            save_slot = options.get("save_slot", 0)
-            if options.get("duty_logo"):
-                info = client.get_device_info()
-                path = make_duty_logo_gif(text, options, info.width, info.height)
-                slot = max(1, int(save_slot or 1))
-                stop_event = options.get("_stop_event")
-                sent_day = date.today().isoformat()
-                try:
-                    # Save a reusable copy if requested, then render slot 0
-                    # directly. On this firmware show_slot(1) returns to the
-                    # boot screen shortly after the image is sent.
-                    await send_prepared_logo_gif(client, path, slot)
-                    await send_prepared_logo_gif(client, path, 0)
-                    while stop_event is not None and not stop_event.is_set():
-                        for _ in range(int(DUTY_LOGO_REPLAY_SECONDS * 4)):
-                            if stop_event.is_set() or date.today().isoformat() != sent_day:
-                                break
-                            await asyncio.sleep(0.25)
-                        if stop_event.is_set() or date.today().isoformat() != sent_day:
-                            break
-                        await send_prepared_logo_gif(client, path, 0)
-                finally:
-                    Path(path).unlink(missing_ok=True)
-            elif options.get("mirror_horizontal") or options.get("mirror_vertical"):
-                info = client.get_device_info()
-                path = make_mirrored_text_gif(text, options, info.width, info.height)
-                try:
-                    await client.send_image(path, resize_method="fit", save_slot=save_slot)
-                    if save_slot > 0:
-                        # Keep the current live display outside the device playlist.
-                        await client.send_image(path, resize_method="fit", save_slot=0)
-                finally:
-                    Path(path).unlink(missing_ok=True)
-            else:
-                await client.send_text(text, save_slot=save_slot, animation=options["animation"], speed=options["speed"], color=options["color"], bg_color=options["bg_color"], font=options["font"])
-                if save_slot > 0:
-                    await client.send_text(text, save_slot=0, animation=options["animation"], speed=options["speed"], color=options["color"], bg_color=options["bg_color"], font=options["font"])
-        return {"device": match.name, "save_slot": save_slot, "text": text}
+        last_error = None
+        for attempt in range(1, 4):
+            try:
+                if attempt == 1 and options.get("device_address"):
+                    device_address = options["device_address"]
+                    device_name = options.get("device_name") or device_address
+                else:
+                    devices = await BleakScanner.discover(timeout=7)
+                    compatible = [d for d in devices if d.name and d.name.startswith(DEVICE_PREFIX)]
+                    preferred = options.get("device_name", "")
+                    match = next((d for d in compatible if preferred and d.name == preferred), None) or (compatible[0] if compatible else None)
+                    if not match:
+                        raise RuntimeError(f"{DEVICE_PREFIX} ile başlayan uyumlu panel bulunamadı. Paneli açın ve telefon bağlantısını kapatın.")
+                    device_address, device_name = match.address, match.name
+                async with AsyncClient(device_address) as client:
+                    await client.set_brightness(options["brightness"])
+                    await client.set_orientation(options.get("orientation", 0))
+                    save_slot = options.get("save_slot", 0)
+                    if options.get("duty_logo"):
+                        info = client.get_device_info()
+                        path = make_duty_logo_gif(text, options, info.width, info.height)
+                        slot = max(1, int(save_slot or 1))
+                        try:
+                            await client.send_text(text, save_slot=slot, animation=options["animation"], speed=options["speed"], color=options["color"], bg_color=options["bg_color"], font=options["font"])
+                            await send_prepared_logo_gif(client, path, 0)
+                        finally:
+                            Path(path).unlink(missing_ok=True)
+                    elif options.get("mirror_horizontal") or options.get("mirror_vertical"):
+                        info = client.get_device_info()
+                        path = make_mirrored_text_gif(text, options, info.width, info.height)
+                        try:
+                            await client.send_image(path, resize_method="fit", save_slot=save_slot)
+                            if save_slot > 0:
+                                await client.send_image(path, resize_method="fit", save_slot=0)
+                        finally:
+                            Path(path).unlink(missing_ok=True)
+                    else:
+                        await client.send_text(text, save_slot=save_slot, animation=options["animation"], speed=options["speed"], color=options["color"], bg_color=options["bg_color"], font=options["font"])
+                        if save_slot > 0:
+                            await client.send_text(text, save_slot=0, animation=options["animation"], speed=options["speed"], color=options["color"], bg_color=options["bg_color"], font=options["font"])
+                return {"device": device_name, "save_slot": save_slot, "text": text}
+            except Exception as exc:
+                last_error = exc
+                if attempt >= 3:
+                    break
+                await asyncio.sleep(attempt * 1.5)
+        raise RuntimeError(f"BLE gönderimi 3 denemede tamamlanamadı: {last_error}") from last_error
 
-    def _background(self, coro, message, on_success=None):
+    def _background(self, coro, message, on_success=None, on_error=None):
         if self.busy:
             if hasattr(coro, "close"):
                 coro.close()
             return
         self.busy = True
-        self._set_status(message)
+        if message:
+            self._set_status(message)
 
         def run():
             try:
                 result = asyncio.run(coro)
                 self.status_queue.put((True, result, on_success))
             except Exception as exc:
-                self.status_queue.put((False, exc, None))
+                self.status_queue.put((False, exc, on_error))
         threading.Thread(target=run, daemon=True).start()
 
     def _poll_status(self):
@@ -1507,15 +1535,17 @@ class PharmacyPanelApp:
                 success, result, callback = self.status_queue.get_nowait()
                 self.busy = False
                 if success:
-                    if hasattr(self, "logo_stop_button"):
-                        self.logo_stop_button.configure(state="disabled")
                     if callback:
                         callback(result)
                 else:
-                    if hasattr(self, "logo_stop_button"):
-                        self.logo_stop_button.configure(state="disabled")
-                    self._set_status(f"İşlem başarısız: {result}")
-                    messagebox.showerror(APP_TITLE, f"İşlem başarısız.\n\n{result}")
+                    if callback:
+                        callback(result)
+                    else:
+                        text = str(result)
+                        if "Unreachable" in text or "Could not write value" in text:
+                            text = "BLE bağlantısı aktarım sırasında koptu (characteristic erişilemez). Paneli bilgisayara yaklaştırın; uygulama otomatik yeniden deneyecek."
+                        self._set_status(f"İşlem başarısız: {text}")
+                        messagebox.showerror(APP_TITLE, f"İşlem başarısız.\n\n{text}")
         except queue.Empty:
             pass
         self.root.after(120, self._poll_status)
@@ -1526,35 +1556,48 @@ class PharmacyPanelApp:
     def _check_daily_send(self):
         if self.auto_var.get() and not self.busy and not self._auto_scan_busy:
             self._auto_scan_busy = True
-            self._background(self._auto_scan_async(), "Panel bağlantısı ve günlük gönderim kontrol ediliyor…", self._auto_scan_done)
-        self.root.after(20_000, self._check_daily_send)
+            self._background(
+                self._auto_scan_async(),
+                None,
+                self._auto_scan_done,
+                lambda exc: self._set_status(f"Panel bağlantısı aktarım sırasında kesildi; yeniden denenecek. ({type(exc).__name__})"),
+            )
+        self.root.after(5_000, self._check_daily_send)
 
     async def _auto_scan_async(self):
         from bleak import BleakScanner
         try:
-            found = await BleakScanner.discover(timeout=5)
-            return [(d.name or "", d.address) for d in found if d.name and d.name.startswith(DEVICE_PREFIX)]
+            found = await BleakScanner.discover(timeout=3)
+            known_address = self.settings.get("device_address", "")
+            return [(d.name or "", d.address) for d in found if (d.name and d.name.startswith(DEVICE_PREFIX)) or (known_address and d.address == known_address)]
         except Exception:
             return []
 
     def _auto_scan_done(self, devices):
         self._auto_scan_busy = False
         selected = self._current_device_name()
-        match = next((item for item in devices if selected and item[0] == selected), None) or (devices[0] if devices else None)
-        was_online = self._auto_device_online
-        self._auto_device_online = bool(match)
+        known_address = self.settings.get("device_address", "")
+        match = next((item for item in devices if item[0] == selected), None) if selected else (devices[0] if devices else None)
+        if not match and known_address:
+            match = next((item for item in devices if item[1] == known_address), None)
         if not match:
-            self._auto_reconnect_pending = True
-            if was_online:
-                self._set_status("Panel bağlantısı kesildi; Bluetooth'ta yeniden görünmesi bekleniyor.")
+            self._auto_scan_misses += 1
+            if self._auto_device_online and self._auto_scan_misses >= AUTO_SCAN_MISSES_FOR_OFFLINE:
+                self._auto_device_online = False
+                self._auto_reconnect_pending = True
+                self._set_status("Panel art arda iki taramada bulunamadı; yeniden görünmesi bekleniyor.")
             return
-        if not was_online:
+        self._auto_scan_misses = 0
+        if not self._auto_device_online:
+            self._auto_device_online = True
             self._auto_reconnect_pending = True
             if not selected:
                 self.device_var.set(match[0])
                 self.settings["device_name"] = match[0]
-                self._save()
-        today = date.today().isoformat()
+        if match[1] != known_address:
+            self.settings["device_address"] = match[1]
+            self._save()
+        today = active_duty_date().isoformat()
         if self._auto_reconnect_pending or self.settings.get("last_auto_date") != today:
             rec = self._selected_record(for_today=True)
             if rec:
@@ -1562,7 +1605,7 @@ class PharmacyPanelApp:
                     self.settings["last_auto_date"] = today
                     self._auto_reconnect_pending = False
                     self._save()
-                self._send_record(rec, "Panel hazır; bugünün nöbeti otomatik gönderiliyor…", mark_sent)
+                self._send_record(rec, "Panel hazır; bugünün nöbeti otomatik gönderiliyor…", mark_sent, device=match, automatic=True)
             else:
                 self._set_status("Bugün için nöbet kaydı yok; panel bulundu.")
 
@@ -1573,7 +1616,7 @@ class PharmacyPanelApp:
 
 async def send_today_once():
     saved = json.loads(DATA_PATH.read_text(encoding="utf-8"))
-    today = date.today().isoformat()
+    today = active_duty_date().isoformat()
     record = next((canonical_record(r) for r in saved.get("records", []) if parse_date(r["date"]).isoformat() == today), None)
     if not record:
         raise RuntimeError(f"{today} için nöbet kaydı bulunamadı.")
@@ -1626,9 +1669,9 @@ async def send_today_once():
             info = client.get_device_info()
             image_path = make_duty_logo_gif(text, options, info.width, info.height)
             try:
-                await send_prepared_logo_gif(client, image_path, options["save_slot"])
                 if options["save_slot"] > 0:
-                    await send_prepared_logo_gif(client, image_path, 0)
+                    await client.send_text(text, save_slot=options["save_slot"], animation=options["animation"], speed=options["speed"], color=options["color"], bg_color=options["bg_color"], font=options["font"])
+                await send_prepared_logo_gif(client, image_path, 0)
             finally:
                 Path(image_path).unlink(missing_ok=True)
         elif options["mirror_horizontal"] or options["mirror_vertical"]:

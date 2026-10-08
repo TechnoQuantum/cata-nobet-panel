@@ -16,9 +16,10 @@ Download **NobetPanel.exe** from the latest [GitHub Release](https://github.com/
 - Manual send for today's or a selected roster entry, plus free-text and image/GIF sending
 - Optional save to a panel slot and advanced iPIXEL commands
 - Optional Windows sign-in startup, minimized to the taskbar
-- Automatic BLE scanning and daily send when the panel is found or reconnects
+- Automatic BLE scanning every 5 seconds and daily send when the panel is found or a disconnect is confirmed by two missed scans
 - Optional red pharmacy E logo with a white rim and blinking red frame, followed by a scrolling duty ticker
-- Logo ticker playback is slowed by 25%; the app keeps a saved copy and refreshes the live slot every 10 seconds to avoid the panel's boot-screen fallback
+- The logo ticker loops continuously from one live-slot upload; a compact scrolling-text copy is saved in the selected slot as a power-cycle fallback
+- Duty-date tracking follows shift hours: regular shifts run 18:00–08:30; Sunday duty runs Sunday 08:30–Monday 08:30
 - Optional “we are on duty today” scrolling message when your pharmacy name matches that roster date
 
 The display text omits addresses by default. The app scans for compatible BLE names with the `LED_BLE_` prefix instead of assuming one device address.

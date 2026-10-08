@@ -1,9 +1,17 @@
 # Changelog
 
+## 1.0.3 - 2026-10-08
+
+- Keep the E logo fixed beside a continuously looping duty ticker; upload the animation once to the live display slot instead of retransmitting it every 10 seconds.
+- Save compact scrolling text as the selected-slot fallback, reducing BLE transfer failures during logo sends.
+- Debounce automatic reconnects: a single missed BLE scan no longer restarts the animation; two consecutive misses confirm the panel is offline.
+- Reconnect using the discovered BLE address and retry interrupted transfers up to three times.
+- Select roster dates by duty windows: regular shifts start at 18:00 and end at 08:30; Sunday shifts run Sunday 08:30 through Monday 08:30.
+
 ## 1.0.2 - 2026-10-08
 
 - Display logo tickers through live slot 0 to prevent the panel from returning to its default boot screen after selecting a saved slot.
-- Keep an optional saved copy in the selected slot and refresh the live animation every 10 seconds while the app is connected.
+- Keep a saved copy in the selected slot and refresh the live animation every 10 seconds while the app is connected.
 
 ## 1.0.1 - 2026-10-08
 
