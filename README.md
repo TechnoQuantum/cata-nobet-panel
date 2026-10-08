@@ -20,7 +20,7 @@ Download **NobetPanel.exe** from the latest [GitHub Release](https://github.com/
 
 The display text omits addresses by default. The app scans for compatible BLE names with the `LED_BLE_` prefix instead of assuming one device address.
 
-An anonymized date/name sample that can be loaded through the CSV/text import is available at [`anonymized_roster.csv`](anonymized_roster.csv). Every pharmacy name in the sample is replaced with generic placeholders; it contains no real pharmacy assignments.
+An anonymized date/name sample that can be loaded through the CSV/text import is available at [`examples/anonymized_roster.csv`](examples/anonymized_roster.csv). Every pharmacy name in the sample is replaced with generic placeholders; it contains no real pharmacy assignments.
 
 ## Requirements
 
