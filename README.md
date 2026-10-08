@@ -17,10 +17,13 @@ Download **NobetPanel.exe** from the latest [GitHub Release](https://github.com/
 - Optional save to a panel slot and advanced iPIXEL commands
 - Optional Windows sign-in startup, minimized to the taskbar
 - Automatic BLE scanning and daily send when the panel is found or reconnects
+- Optional “we are on duty today” scrolling message when your pharmacy name matches today's roster
 
 The display text omits addresses by default. The app scans for compatible BLE names with the `LED_BLE_` prefix instead of assuming one device address.
 
 An anonymized date/name sample that can be loaded through the CSV/text import is available at [`examples/anonymized_roster.csv`](examples/anonymized_roster.csv). Every pharmacy name in the sample is replaced with generic placeholders; it contains no real pharmacy assignments.
+
+To enable the on-duty message, enter your pharmacy name in **Bizim eczane adımız** and enable the option below it. The app checks today's roster names; on a match, today's send uses `BUGÜN NÖBETÇİYİZ: <pharmacy>` with the selected animation and colors. Other dates and non-matching rosters keep the usual duty-list message.
 
 ## Requirements
 
@@ -48,6 +51,8 @@ The core source is `nobet_panel.py`. Runtime settings and imported rosters are s
 ## BLE protocol and upstream projects
 
 This app delegates device commands and image/text encoding to [`pypixelcolor`](https://github.com/lucagoc/pypixelcolor) (MIT). The iPIXEL BLE service/command details are based on the [iPIXEL protocol documentation](https://github.com/cagcoach/ha-ipixel-color/blob/main/iPIXEL-Protocol-Documentation.md). BLE discovery uses [`Bleak`](https://github.com/hbldh/bleak); image handling uses [`Pillow`](https://github.com/python-pillow/Pillow). Versions are pinned or constrained in the requirements files. See [Third-party notices](THIRD_PARTY_NOTICES.md) for license information.
+
+The generic on-duty message option was inspired by the on-duty display concept shown on the [REGO Nöbet product page](https://regosoft.com.tr/urun/rego-nobet-akilli-nobetci-eczane-tabelasi). No REGO graphics or product assets are included.
 
 ## Limitations
 
