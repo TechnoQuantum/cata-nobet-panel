@@ -23,7 +23,7 @@ from tkinter import colorchooser, filedialog, messagebox, ttk
 
 APP_TITLE = "Nöbetçi Eczane Paneli"
 DEVICE_PREFIX = "LED_BLE_"
-DUTY_LOGO_REPLAY_SECONDS = 15.0
+DUTY_LOGO_REPLAY_SECONDS = 10.0
 ANIMATIONS = {
     "Sabit": 0,
     "Sola kaydır": 1,
@@ -1418,13 +1418,13 @@ class PharmacyPanelApp:
         options = self._send_options()
         options["duty_logo"] = bool(special or self.roster_logo_var.get())
         if options["duty_logo"]:
-            # The panel plays one GIF pass and then holds its last frame. Keep
-            # the uploaded program slot alive and restart it before it stalls.
+            # Keep the selected saved copy, but use the live display slot so
+            # firmware does not switch back to its boot screen after show_slot.
             options["save_slot"] = max(1, int(options.get("save_slot", 1)))
             options["_stop_event"] = self.logo_stop_event
             self.logo_stop_event.clear()
             self.logo_stop_button.configure(state="normal")
-            message = "E logolu kayan nöbet listesi başlatılıyor; panel animasyonu canlı tutulacak…"
+            message = "E logolu kayan nöbet listesi canlı ekranda başlatılıyor…"
         self._background(self._send_async(text, options), message, completed)
 
     def _remember_slot(self, text, options, result):
@@ -1454,8 +1454,11 @@ class PharmacyPanelApp:
                 stop_event = options.get("_stop_event")
                 sent_day = date.today().isoformat()
                 try:
+                    # Save a reusable copy if requested, then render slot 0
+                    # directly. On this firmware show_slot(1) returns to the
+                    # boot screen shortly after the image is sent.
                     await send_prepared_logo_gif(client, path, slot)
-                    await client.show_slot(slot)
+                    await send_prepared_logo_gif(client, path, 0)
                     while stop_event is not None and not stop_event.is_set():
                         for _ in range(int(DUTY_LOGO_REPLAY_SECONDS * 4)):
                             if stop_event.is_set() or date.today().isoformat() != sent_day:
@@ -1463,7 +1466,7 @@ class PharmacyPanelApp:
                             await asyncio.sleep(0.25)
                         if stop_event.is_set() or date.today().isoformat() != sent_day:
                             break
-                        await client.show_slot(slot)
+                        await send_prepared_logo_gif(client, path, 0)
                 finally:
                     Path(path).unlink(missing_ok=True)
             elif options.get("mirror_horizontal") or options.get("mirror_vertical"):

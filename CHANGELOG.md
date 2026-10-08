@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.2 - 2026-10-08
+
+- Display logo tickers through live slot 0 to prevent the panel from returning to its default boot screen after selecting a saved slot.
+- Keep an optional saved copy in the selected slot and refresh the live animation every 10 seconds while the app is connected.
+
 ## 1.0.1 - 2026-10-08
 
 - Added a custom pharmacy E application and executable icon.

@@ -18,7 +18,7 @@ Download **NobetPanel.exe** from the latest [GitHub Release](https://github.com/
 - Optional Windows sign-in startup, minimized to the taskbar
 - Automatic BLE scanning and daily send when the panel is found or reconnects
 - Optional red pharmacy E logo with a white rim and blinking red frame, followed by a scrolling duty ticker
-- Logo ticker playback is slowed by 25% relative to the earlier build; the app replays the saved slot periodically to keep firmware that stops after one GIF pass moving
+- Logo ticker playback is slowed by 25%; the app keeps a saved copy and refreshes the live slot every 10 seconds to avoid the panel's boot-screen fallback
 - Optional “we are on duty today” scrolling message when your pharmacy name matches that roster date
 
 The display text omits addresses by default. The app scans for compatible BLE names with the `LED_BLE_` prefix instead of assuming one device address.
