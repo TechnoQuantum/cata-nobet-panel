@@ -23,6 +23,7 @@ from tkinter import colorchooser, filedialog, messagebox, ttk
 
 APP_TITLE = "Nöbetçi Eczane Paneli"
 DEVICE_PREFIX = "LED_BLE_"
+DUTY_LOGO_REPLAY_SECONDS = 15.0
 ANIMATIONS = {
     "Sabit": 0,
     "Sola kaydır": 1,
@@ -35,6 +36,11 @@ ANIMATIONS = {
 LOCAL_APP_DATA = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "NobetPanel"
 LOCAL_APP_DATA.mkdir(parents=True, exist_ok=True)
 DATA_PATH = LOCAL_APP_DATA / "nobet_listesi.json"
+
+
+def resource_path(relative: str) -> Path:
+    bundle_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return bundle_root / relative
 
 
 def parse_date(value: str) -> date:
@@ -119,8 +125,97 @@ def make_mirrored_text_gif(text: str, options: dict, width: int, height: int) ->
     speed = max(1, min(100, int(options.get("speed", 70))))
     duration = max(25, min(150, 160 - speed))
     out = Path(tempfile.gettempdir()) / f"nobet-mirror-{os.getpid()}.gif"
-    frames[0].save(out, format="GIF", save_all=True, append_images=frames[1:], duration=duration, loop=0, disposal=2, optimize=True)
+    frames[0].save(out, format="GIF", save_all=True, append_images=frames[1:], duration=duration, loop=65535, disposal=2, optimize=True)
     return str(out)
+
+
+def make_duty_logo_gif(text: str, options: dict, width: int, height: int) -> str:
+    """Render the pharmacy E mark and a scrolling duty message for the LED matrix."""
+    from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+    width, height = max(16, int(width)), max(8, int(height))
+    bg = str(options.get("bg_color", "071a35")).lstrip("#")
+    fg = str(options.get("color", "ffffff")).lstrip("#")
+    bg_rgb = tuple(int(bg[i:i + 2], 16) for i in (0, 2, 4))
+    fg_rgb = tuple(int(fg[i:i + 2], 16) for i in (0, 2, 4))
+    font_path = options.get("font", "")
+    candidates = [font_path, r"C:\Windows\Fonts\arialbd.ttf", r"C:\Windows\Fonts\arial.ttf", r"C:\Windows\Fonts\segoeui.ttf"]
+    font = None
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            try:
+                font = ImageFont.truetype(candidate, max(8, height - 3))
+                break
+            except OSError:
+                pass
+    if font is None:
+        font = ImageFont.load_default()
+
+    probe = Image.new("RGB", (1, 1))
+    measure = ImageDraw.Draw(probe)
+    text_width = max(1, measure.textbbox((0, 0), text, font=font)[2])
+    logo_width = min(height, 16)
+    gap = 2
+    text_left = logo_width + gap
+    viewport = max(1, width - text_left)
+    cycle = text_width + 45
+    travel = cycle
+    frame_count = min(72, max(48, round(travel / 4.5)))
+    speed = max(1, min(100, int(options.get("speed", 70))))
+    # The matrix firmware scrolls logo GIFs faster than the preview suggests.
+    # Extend each frame by 25% while retaining the existing speed control.
+    duration = max(100, min(200, round((180 - speed) * 1.25)))
+    frames = []
+
+    # Draw directly at the panel's native pixel resolution. The E sits inside
+    # both borders, with one clear row above and below the glyph.
+    for index in range(frame_count):
+        frame = Image.new("RGB", (width, height), bg_rgb)
+        icon = Image.new("RGB", (logo_width, height), bg_rgb)
+        d = ImageDraw.Draw(icon)
+        if logo_width >= 16 and height >= 16:
+            d.rectangle((1, 1, 14, 14), outline=(230, 20, 35) if (index // 7) % 2 == 0 else (90, 10, 20), width=1)
+            d.rectangle((2, 2, 13, 13), outline=(255, 255, 255), width=1)
+            # White keyline around a red E; stay clear of the lower border.
+            for box in ((4, 4, 11, 6), (4, 4, 6, 12), (4, 7, 10, 9), (4, 10, 11, 12)):
+                d.rectangle(box, fill=(255, 255, 255))
+            for box in ((5, 5, 10, 5), (5, 5, 6, 11), (5, 8, 9, 8), (5, 11, 10, 11)):
+                d.rectangle(box, fill=(225, 0, 28))
+        frame.paste(icon, (0, 0))
+        viewport_layer = Image.new("RGB", (viewport, height), bg_rgb)
+        td = ImageDraw.Draw(viewport_layer)
+        bounds = td.textbbox((0, 0), text, font=font)
+        glyph_height = bounds[3] - bounds[1]
+        ty = (height - glyph_height) // 2 - bounds[1]
+        offset = round(index * travel / max(1, frame_count - 1))
+        # Start with readable text beside the logo. Two copies form a seamless
+        # ticker; the final frame matches the first if firmware stops after one pass.
+        for text_x in (-offset, cycle - offset):
+            td.text((text_x - bounds[0], ty), text, font=font, fill=fg_rgb)
+        frame.paste(viewport_layer, (text_left, 0))
+        frames.append(frame)
+
+    if options.get("mirror_horizontal"):
+        frames = [ImageOps.mirror(frame) for frame in frames]
+    if options.get("mirror_vertical"):
+        frames = [ImageOps.flip(frame) for frame in frames]
+    # Keep a shared, tiny palette across every frame. On a 96x16 panel this
+    # cuts the BLE transfer substantially without reducing frame smoothness.
+    palette_colors = list(dict.fromkeys([bg_rgb, fg_rgb, (225, 0, 28), (255, 255, 255), (230, 20, 35), (90, 10, 20)]))
+    palette_data = [channel for color in palette_colors for channel in color]
+    palette_data.extend([0] * (768 - len(palette_data)))
+    palette_image = Image.new("P", (1, 1))
+    palette_image.putpalette(palette_data)
+    gif_frames = [frame.quantize(palette=palette_image, dither=Image.Dither.NONE) for frame in frames]
+    out = Path(tempfile.gettempdir()) / f"nobet-duty-logo-{os.getpid()}.gif"
+    gif_frames[0].save(out, format="GIF", save_all=True, append_images=gif_frames[1:], duration=duration, loop=65535, disposal=2, optimize=True)
+    return str(out)
+
+
+async def send_prepared_logo_gif(client, path: str, save_slot: int):
+    """Send a native-size, compact GIF without pypixelcolor's GIF re-encode pass."""
+    # Let pypixelcolor normalize GIF palettes and per-frame disposal/timing.
+    await client.send_image(path, resize_method="fit", save_slot=save_slot)
 
 
 MONTH_NUMBERS = {
@@ -227,6 +322,10 @@ class PharmacyPanelApp:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title(APP_TITLE)
+        try:
+            self.root.iconbitmap(str(resource_path("assets/nobet_panel.ico")))
+        except (tk.TclError, OSError):
+            pass
         self.root.geometry("1280x930")
         self.root.minsize(1080, 820)
         self.root.configure(bg="#f2f5f9")
@@ -245,12 +344,14 @@ class PharmacyPanelApp:
             "last_auto_date": "",
             "own_pharmacy_name": "",
             "own_duty_message_enabled": False,
+            "roster_logo_enabled": False,
             "save_to_slot": True,
             "save_slot": 1,
             "orientation": 0,
             "mirror_horizontal": False,
         }
         self.busy = False
+        self.logo_stop_event = threading.Event()
         self.preview_offset = 0
         self.preview_phase = 0
         self.view_month = date.today().replace(day=1)
@@ -676,6 +777,7 @@ class PharmacyPanelApp:
         ttk.Label(panel, text="Ayna seçilince metin, animasyonlu görsele çevrilerek yansıtılır.", style="Sub.TLabel", wraplength=320).pack(anchor="w", pady=(0, 4))
         self._preview = tk.Canvas(panel, height=110, bg="#071a35", highlightthickness=0)
         self._preview.pack(fill="x", pady=(0, 12))
+        self._duty_ticker_canvas = tk.Canvas(self._preview, height=110, bg="#071a35", highlightthickness=0)
         self.preview_label = ttk.Label(panel, text="Önizleme", style="Sub.TLabel")
         self.preview_label.pack(anchor="w")
         ttk.Label(panel, text="Önizleme; seçili tarih, metin, renk, efekt ve hızı yaklaşık gösterir.", style="Sub.TLabel", wraplength=320).pack(anchor="w", pady=(2, 0))
@@ -714,6 +816,11 @@ class PharmacyPanelApp:
         self.own_duty_message_var = tk.BooleanVar(value=bool(self.settings.get("own_duty_message_enabled", False)))
         ttk.Checkbutton(panel, text="Biz nöbetçiyken ‘BUGÜN NÖBETÇİYİZ’ göster", variable=self.own_duty_message_var, command=self._save_control_settings).pack(anchor="w", pady=(3, 3))
         ttk.Label(panel, text="Kayıttaki eczane adıyla eşleşirse bugünün liste yazısı yerine seçili kaydırma efektiyle bu mesaj gönderilir.", style="Sub.TLabel", wraplength=320).pack(anchor="w")
+        self.roster_logo_var = tk.BooleanVar(value=bool(self.settings.get("roster_logo_enabled", False)))
+        ttk.Checkbutton(panel, text="Kayan nöbet listesinde E logosu göster (isteğe bağlı)", variable=self.roster_logo_var, command=self._save_control_settings).pack(anchor="w", pady=(4, 3))
+        self.logo_stop_button = ttk.Button(panel, text="Logolu kaydırmayı durdur", command=self._stop_logo_animation, state="disabled")
+        self.logo_stop_button.pack(fill="x", pady=(2, 5))
+        ttk.Label(panel, text="Kırmızı E, beyaz çevre ve yanıp sönen kırmızı çerçeve; nöbet listesi GIF animasyonu olarak gönderilir.", style="Sub.TLabel", wraplength=320).pack(anchor="w")
         self.startup_var = tk.BooleanVar(value=self._startup_enabled())
         ttk.Checkbutton(panel, text="Windows açılışında küçültülmüş başlat", variable=self.startup_var, command=self._toggle_startup).pack(anchor="w", pady=(8, 3))
         ttk.Label(panel, text="Bu seçenek otomatik günlük gönderimi de açar. Uygulama görev çubuğuna küçültülür; BLE taraması sürer.", style="Sub.TLabel", wraplength=320).pack(anchor="w")
@@ -750,6 +857,7 @@ class PharmacyPanelApp:
             "auto_send": self.auto_var.get(),
             "own_pharmacy_name": self.own_pharmacy_var.get().strip(),
             "own_duty_message_enabled": self.own_duty_message_var.get(),
+            "roster_logo_enabled": self.roster_logo_var.get(),
             "free_mode": self.free_mode_var.get(),
             "free_text": self.free_text_var.get(),
             "save_to_slot": self.save_to_slot_var.get(),
@@ -1124,8 +1232,8 @@ class PharmacyPanelApp:
         iso = date.today().isoformat() if for_today else parse_date(self.date_var.get()).isoformat()
         return next((r for r in self.records if r["date"] == iso), None)
 
-    def _own_duty_message(self, rec):
-        if not rec or rec.get("date") != date.today().isoformat():
+    def _own_duty_message(self, rec, preview=False):
+        if not rec or (not preview and rec.get("date") != date.today().isoformat()):
             return None
         if not self.own_duty_message_var.get():
             return None
@@ -1138,13 +1246,16 @@ class PharmacyPanelApp:
         roster_names = [pharmacy_key(name) for name in rec["pharmacy"].split("/") if name.strip()]
         if own_key not in roster_names:
             return None
-        return f"BUGÜN NÖBETÇİYİZ: {own_name.upper()}"
+        d = parse_date(rec["date"])
+        months = ("OCAK", "ŞUBAT", "MART", "NİSAN", "MAYIS", "HAZİRAN", "TEMMUZ", "AĞUSTOS", "EYLÜL", "EKİM", "KASIM", "ARALIK")
+        return f"{d.day} {months[d.month - 1]} - BUGÜN NÖBETÇİYİZ: {own_name.upper()}"
 
     def _update_preview(self):
         if not hasattr(self, "_preview"):
             return
         if getattr(self, "free_mode_var", None) and self.free_mode_var.get():
             self.preview_text = self.free_text_var.get().strip() or "Serbest metni yazın"
+            self.preview_duty_mode = False
             self.preview_offset = 0
             self.preview_phase = 0
             self._preview.configure(bg=self.settings.get("background_color", "#071a35"))
@@ -1158,7 +1269,9 @@ class PharmacyPanelApp:
                 rec = canonical_record({"date": iso, "pharmacy": form_name}) if form_name else next((r for r in self.records if r["date"] == iso), None)
             except ValueError:
                 rec = None
-        self.preview_text = (self._own_duty_message(rec) or format_display(rec)) if rec else "Tarih ve eczane adlarını girin"
+        special = self._own_duty_message(rec, preview=True) if rec else None
+        self.preview_duty_mode = bool(rec and (special or self.roster_logo_var.get()))
+        self.preview_text = (special or format_display(rec)) if rec else "Tarih ve eczane adlarını girin"
         self.preview_offset = 0
         self.preview_phase = 0
         self._preview.configure(bg=self.settings.get("background_color", "#071a35"))
@@ -1175,6 +1288,31 @@ class PharmacyPanelApp:
         font = ("Segoe UI", 12, "bold")
         measure_font = tkfont.Font(family="Segoe UI", size=12, weight="bold")
         self.preview_phase += 1
+        if getattr(self, "preview_duty_mode", False):
+            # A larger UI rendition of the 16px pharmacy mark, plus the same continuous ticker.
+            x0, y0, size = 12, 27, 56
+            outer = "#e61427" if (self.preview_phase // 7) % 2 == 0 else "#5a0a14"
+            logo_items = [
+                self._preview.create_rectangle(x0, y0, x0 + size, y0 + size, outline=outer, width=4),
+                self._preview.create_rectangle(x0 + 6, y0 + 6, x0 + size - 6, y0 + size - 6, outline="#ffffff", width=4),
+            ]
+            for dx, dy in ((-2, 0), (2, 0), (0, -2), (0, 2)):
+                logo_items.append(self._preview.create_text(x0 + size / 2 + dx, y0 + size / 2 + dy, text="E", fill="#ffffff", font=("Arial", 39, "bold")))
+            logo_items.append(self._preview.create_text(x0 + size / 2, y0 + size / 2, text="E", fill="#e1001c", font=("Arial", 39, "bold")))
+            start = x0 + size + 15
+            available = max(80, width - start)
+            text_width = max(120, measure_font.measure(text))
+            cycle = text_width + 45
+            ticker = self._duty_ticker_canvas
+            ticker.configure(width=available, height=110, bg=bg)
+            ticker.delete("all")
+            self._preview.create_window((start, 0), anchor="nw", window=ticker, width=available, height=110)
+            x = available - self.preview_offset
+            ticker.create_text(x, 55, text=text, fill=fg, font=font, anchor="w")
+            ticker.create_text(x + cycle, 55, text=text, fill=fg, font=font, anchor="w")
+            self.preview_offset = (self.preview_offset + max(1, self.speed_var.get() // 22)) % cycle
+            self._preview.after(55, self._preview_tick)
+            return
         if anim == "Sabit":
             self._preview.create_text(width / 2, 55, text=text, fill=fg, font=font, anchor="center")
         elif anim in ("Sola kaydır", "Sağa kaydır"):
@@ -1261,9 +1399,14 @@ class PharmacyPanelApp:
             "mirror_vertical": self.mirror_vertical_var.get(),
         }
 
+    def _stop_logo_animation(self):
+        self.logo_stop_event.set()
+        self._set_status("Logolu kaydırma durduruluyor…")
+
     def _send_record(self, rec, message, on_success=None):
         self._save_control_settings()
-        text = self._own_duty_message(rec) or format_display(rec)
+        special = self._own_duty_message(rec)
+        text = special or format_display(rec)
         if len(text) > 500:
             messagebox.showerror(APP_TITLE, "Gönderilecek metin 500 karakteri aşıyor. Eczane adlarını kısaltın.")
             return
@@ -1273,6 +1416,15 @@ class PharmacyPanelApp:
             if on_success:
                 on_success(result)
         options = self._send_options()
+        options["duty_logo"] = bool(special or self.roster_logo_var.get())
+        if options["duty_logo"]:
+            # The panel plays one GIF pass and then holds its last frame. Keep
+            # the uploaded program slot alive and restart it before it stalls.
+            options["save_slot"] = max(1, int(options.get("save_slot", 1)))
+            options["_stop_event"] = self.logo_stop_event
+            self.logo_stop_event.clear()
+            self.logo_stop_button.configure(state="normal")
+            message = "E logolu kayan nöbet listesi başlatılıyor; panel animasyonu canlı tutulacak…"
         self._background(self._send_async(text, options), message, completed)
 
     def _remember_slot(self, text, options, result):
@@ -1295,7 +1447,26 @@ class PharmacyPanelApp:
             await client.set_brightness(options["brightness"])
             await client.set_orientation(options.get("orientation", 0))
             save_slot = options.get("save_slot", 0)
-            if options.get("mirror_horizontal") or options.get("mirror_vertical"):
+            if options.get("duty_logo"):
+                info = client.get_device_info()
+                path = make_duty_logo_gif(text, options, info.width, info.height)
+                slot = max(1, int(save_slot or 1))
+                stop_event = options.get("_stop_event")
+                sent_day = date.today().isoformat()
+                try:
+                    await send_prepared_logo_gif(client, path, slot)
+                    await client.show_slot(slot)
+                    while stop_event is not None and not stop_event.is_set():
+                        for _ in range(int(DUTY_LOGO_REPLAY_SECONDS * 4)):
+                            if stop_event.is_set() or date.today().isoformat() != sent_day:
+                                break
+                            await asyncio.sleep(0.25)
+                        if stop_event.is_set() or date.today().isoformat() != sent_day:
+                            break
+                        await client.show_slot(slot)
+                finally:
+                    Path(path).unlink(missing_ok=True)
+            elif options.get("mirror_horizontal") or options.get("mirror_vertical"):
                 info = client.get_device_info()
                 path = make_mirrored_text_gif(text, options, info.width, info.height)
                 try:
@@ -1333,9 +1504,13 @@ class PharmacyPanelApp:
                 success, result, callback = self.status_queue.get_nowait()
                 self.busy = False
                 if success:
+                    if hasattr(self, "logo_stop_button"):
+                        self.logo_stop_button.configure(state="disabled")
                     if callback:
                         callback(result)
                 else:
+                    if hasattr(self, "logo_stop_button"):
+                        self.logo_stop_button.configure(state="disabled")
                     self._set_status(f"İşlem başarısız: {result}")
                     messagebox.showerror(APP_TITLE, f"İşlem başarısız.\n\n{result}")
         except queue.Empty:
@@ -1424,6 +1599,16 @@ async def send_today_once():
         "mirror_vertical": bool(settings.get("mirror_vertical", False)),
     }
     text = format_display(record)
+    if settings.get("own_duty_message_enabled") and settings.get("own_pharmacy_name"):
+        def pharmacy_key(value):
+            return normalize_tr(value).replace("ECZANESI", "").strip()
+        own_name = str(settings["own_pharmacy_name"]).strip()
+        roster_names = [pharmacy_key(name) for name in record["pharmacy"].split("/") if name.strip()]
+        if pharmacy_key(own_name) in roster_names:
+            d = parse_date(record["date"])
+            months = ("OCAK", "ŞUBAT", "MART", "NİSAN", "MAYIS", "HAZİRAN", "TEMMUZ", "AĞUSTOS", "EYLÜL", "EKİM", "KASIM", "ARALIK")
+            text = f"{d.day} {months[d.month - 1]} - BUGÜN NÖBETÇİYİZ: {own_name.upper()}"
+    options["duty_logo"] = bool(("BUGÜN NÖBETÇİYİZ:" in text) or settings.get("roster_logo_enabled", False))
     from bleak import BleakScanner
     from pypixelcolor import AsyncClient
     devices = await BleakScanner.discover(timeout=8)
@@ -1434,13 +1619,22 @@ async def send_today_once():
     async with AsyncClient(match.address) as client:
         await client.set_brightness(options["brightness"])
         await client.set_orientation(options["orientation"])
-        if options["mirror_horizontal"] or options["mirror_vertical"]:
+        if options["duty_logo"]:
+            info = client.get_device_info()
+            image_path = make_duty_logo_gif(text, options, info.width, info.height)
+            try:
+                await send_prepared_logo_gif(client, image_path, options["save_slot"])
+                if options["save_slot"] > 0:
+                    await send_prepared_logo_gif(client, image_path, 0)
+            finally:
+                Path(image_path).unlink(missing_ok=True)
+        elif options["mirror_horizontal"] or options["mirror_vertical"]:
             info = client.get_device_info()
             image_path = make_mirrored_text_gif(text, options, info.width, info.height)
             try:
-                await client.send_image(image_path, resize_method="fit", save_slot=options["save_slot"])
+                await send_prepared_logo_gif(client, image_path, options["save_slot"])
                 if options["save_slot"] > 0:
-                    await client.send_image(image_path, resize_method="fit", save_slot=0)
+                    await send_prepared_logo_gif(client, image_path, 0)
             finally:
                 Path(image_path).unlink(missing_ok=True)
         else:

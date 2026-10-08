@@ -18,4 +18,3 @@ The Windows release is built with [PyInstaller](https://github.com/pyinstaller/p
 The panel protocol implementation is provided by the upstream `pypixelcolor` project. The application does not copy or vendor its source code. Protocol-specific behavior is informed by the `ha-ipixel-color` documentation linked above. Please consult upstream repositories for full notices and license terms.
 
 The optional on-duty message is a generic text feature inspired by the display concept on the [REGO Nöbet product page](https://regosoft.com.tr/urun/rego-nobet-akilli-nobetci-eczane-tabelasi). This project does not include REGO artwork, product assets, or code.
-

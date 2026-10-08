@@ -5,6 +5,8 @@ python -m PyInstaller `
   --clean `
   --onefile `
   --windowed `
+  --icon assets\nobet_panel.ico `
+  --add-data "assets\nobet_panel.ico;assets" `
   --name NobetPanel `
   --distpath dist `
   --workpath build `

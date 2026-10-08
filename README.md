@@ -17,13 +17,17 @@ Download **NobetPanel.exe** from the latest [GitHub Release](https://github.com/
 - Optional save to a panel slot and advanced iPIXEL commands
 - Optional Windows sign-in startup, minimized to the taskbar
 - Automatic BLE scanning and daily send when the panel is found or reconnects
-- Optional “we are on duty today” scrolling message when your pharmacy name matches today's roster
+- Optional red pharmacy E logo with a white rim and blinking red frame, followed by a scrolling duty ticker
+- Logo ticker playback is slowed by 25% relative to the earlier build; the app replays the saved slot periodically to keep firmware that stops after one GIF pass moving
+- Optional “we are on duty today” scrolling message when your pharmacy name matches that roster date
 
 The display text omits addresses by default. The app scans for compatible BLE names with the `LED_BLE_` prefix instead of assuming one device address.
 
 An anonymized date/name sample that can be loaded through the CSV/text import is available at [`examples/anonymized_roster.csv`](examples/anonymized_roster.csv). Every pharmacy name in the sample is replaced with generic placeholders; it contains no real pharmacy assignments.
 
-To enable the on-duty message, enter your pharmacy name in **Bizim eczane adımız** and enable the option below it. The app checks today's roster names; on a match, today's send uses `BUGÜN NÖBETÇİYİZ: <pharmacy>` with the selected animation and colors. Other dates and non-matching rosters keep the usual duty-list message.
+The E logo is optional for regular roster sends; enable it with **Kayan nöbet listesinde E logosu göster (isteğe bağlı)**. The logo stays fixed while the ticker scrolls in a separate clipped area beside it. To enable the on-duty message, enter your pharmacy name in **Bizim eczane adımız** and enable the option below it. When that name matches the current duty date, the ticker shows `<date> - BUGÜN NÖBETÇİYİZ: <pharmacy>` with the fixed E logo. Otherwise it shows the regular roster, with the logo only when the optional setting is enabled.
+
+The app window and Windows executable use the custom icon in [`assets/nobet_panel.ico`](assets/nobet_panel.ico); the matching PNG is included for documentation and repackaging.
 
 ## Requirements
 
@@ -58,9 +62,9 @@ The generic on-duty message option was inspired by the on-duty display concept s
 
 - Panel behavior varies by firmware. Slot enumeration/readback can be unavailable through the library/device API; the app's slot list may therefore reflect its local send manifest rather than a complete device readback.
 - Automatic sending is best-effort. The PC needs to be awake, Bluetooth enabled, and able to connect to the panel.
+- The small 96 × 16 panel limits how much of a logo and message is visible at once; the ticker scrolls the full message over time.
 - This software has not been validated for emergency alerting or other safety-critical use. Confirm the displayed duty roster against the official source.
 
 ## License
 
 No license is granted for this application's original source files. Third-party components retain their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).
-
