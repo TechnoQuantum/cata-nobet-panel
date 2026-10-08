@@ -243,6 +243,8 @@ class PharmacyPanelApp:
             "font": "UNIFONT",
             "auto_send": True,
             "last_auto_date": "",
+            "own_pharmacy_name": "",
+            "own_duty_message_enabled": False,
             "save_to_slot": True,
             "save_slot": 1,
             "orientation": 0,
@@ -702,6 +704,16 @@ class PharmacyPanelApp:
         self.auto_var = tk.BooleanVar(value=bool(self.settings.get("auto_send", False)))
         ttk.Checkbutton(panel, text="Gün değişince veya panel yeniden bağlanınca gönder", variable=self.auto_var, command=self._save_control_settings).pack(anchor="w", pady=(11, 6))
         ttk.Label(panel, text="Otomatik gönderim için uygulama açık ve panelin Bluetooth menzili içinde olmalı. Panel yaklaşık 20 saniyede bir taranır.", style="Sub.TLabel", wraplength=320).pack(anchor="w")
+        self.own_pharmacy_var = tk.StringVar(value=str(self.settings.get("own_pharmacy_name", "")))
+        own_row = ttk.Frame(panel, style="Card.TFrame")
+        own_row.pack(fill="x", pady=(10, 3))
+        ttk.Label(own_row, text="Bizim eczane adımız", style="Card.TLabel").pack(side="left")
+        own_entry = ttk.Entry(own_row, textvariable=self.own_pharmacy_var)
+        own_entry.pack(side="right", fill="x", expand=True, padx=(8, 0))
+        own_entry.bind("<KeyRelease>", lambda _event: self._save_control_settings())
+        self.own_duty_message_var = tk.BooleanVar(value=bool(self.settings.get("own_duty_message_enabled", False)))
+        ttk.Checkbutton(panel, text="Biz nöbetçiyken ‘BUGÜN NÖBETÇİYİZ’ göster", variable=self.own_duty_message_var, command=self._save_control_settings).pack(anchor="w", pady=(3, 3))
+        ttk.Label(panel, text="Kayıttaki eczane adıyla eşleşirse bugünün liste yazısı yerine seçili kaydırma efektiyle bu mesaj gönderilir.", style="Sub.TLabel", wraplength=320).pack(anchor="w")
         self.startup_var = tk.BooleanVar(value=self._startup_enabled())
         ttk.Checkbutton(panel, text="Windows açılışında küçültülmüş başlat", variable=self.startup_var, command=self._toggle_startup).pack(anchor="w", pady=(8, 3))
         ttk.Label(panel, text="Bu seçenek otomatik günlük gönderimi de açar. Uygulama görev çubuğuna küçültülür; BLE taraması sürer.", style="Sub.TLabel", wraplength=320).pack(anchor="w")
@@ -736,6 +748,8 @@ class PharmacyPanelApp:
             "background_color": self.settings.get("background_color", "#071a35"),
             "font": self.font_var.get(),
             "auto_send": self.auto_var.get(),
+            "own_pharmacy_name": self.own_pharmacy_var.get().strip(),
+            "own_duty_message_enabled": self.own_duty_message_var.get(),
             "free_mode": self.free_mode_var.get(),
             "free_text": self.free_text_var.get(),
             "save_to_slot": self.save_to_slot_var.get(),
@@ -1110,6 +1124,22 @@ class PharmacyPanelApp:
         iso = date.today().isoformat() if for_today else parse_date(self.date_var.get()).isoformat()
         return next((r for r in self.records if r["date"] == iso), None)
 
+    def _own_duty_message(self, rec):
+        if not rec or rec.get("date") != date.today().isoformat():
+            return None
+        if not self.own_duty_message_var.get():
+            return None
+        own_name = self.own_pharmacy_var.get().strip()
+        if not own_name:
+            return None
+        def pharmacy_key(value):
+            return normalize_tr(value).replace("ECZANESI", "").strip()
+        own_key = pharmacy_key(own_name)
+        roster_names = [pharmacy_key(name) for name in rec["pharmacy"].split("/") if name.strip()]
+        if own_key not in roster_names:
+            return None
+        return f"BUGÜN NÖBETÇİYİZ: {own_name.upper()}"
+
     def _update_preview(self):
         if not hasattr(self, "_preview"):
             return
@@ -1128,7 +1158,7 @@ class PharmacyPanelApp:
                 rec = canonical_record({"date": iso, "pharmacy": form_name}) if form_name else next((r for r in self.records if r["date"] == iso), None)
             except ValueError:
                 rec = None
-        self.preview_text = format_display(rec) if rec else "Tarih ve eczane adlarını girin"
+        self.preview_text = (self._own_duty_message(rec) or format_display(rec)) if rec else "Tarih ve eczane adlarını girin"
         self.preview_offset = 0
         self.preview_phase = 0
         self._preview.configure(bg=self.settings.get("background_color", "#071a35"))
@@ -1233,7 +1263,7 @@ class PharmacyPanelApp:
 
     def _send_record(self, rec, message, on_success=None):
         self._save_control_settings()
-        text = format_display(rec)
+        text = self._own_duty_message(rec) or format_display(rec)
         if len(text) > 500:
             messagebox.showerror(APP_TITLE, "Gönderilecek metin 500 karakteri aşıyor. Eczane adlarını kısaltın.")
             return
