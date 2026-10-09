@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.4 - 2026-10-09
+
+- During 08:30–18:00 gaps, select today's upcoming roster and display its exact duty window so the prior shift is not mistaken for the current one.
+
 ## 1.0.3 - 2026-10-08
 
 - Keep the E logo fixed beside a continuously looping duty ticker; upload the animation once to the live display slot instead of retransmitting it every 10 seconds.
@@ -7,7 +11,6 @@
 - Debounce automatic reconnects: a single missed BLE scan no longer restarts the animation; two consecutive misses confirm the panel is offline.
 - Reconnect using the discovered BLE address and retry interrupted transfers up to three times.
 - Select roster dates by duty windows: regular shifts start at 18:00 and end at 08:30; Sunday shifts run Sunday 08:30 through Monday 08:30.
-- During 08:30–18:00 gaps, select today's upcoming roster and display its exact duty window so the prior shift is not mistaken for the current one.
 
 ## 1.0.2 - 2026-10-08
 
