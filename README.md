@@ -19,7 +19,7 @@ Download **NobetPanel.exe** from the latest [GitHub Release](https://github.com/
 - Automatic BLE scanning every 5 seconds and daily send when the panel is found or a disconnect is confirmed by two missed scans
 - Optional red pharmacy E logo with a white rim and blinking red frame, followed by a scrolling duty ticker
 - The logo ticker loops continuously from one live-slot upload; a compact scrolling-text copy is saved in the selected slot as a power-cycle fallback
-- Duty-date tracking follows shift hours: regular shifts run 18:00–08:30; Sunday duty runs Sunday 08:30–Monday 08:30
+- Duty-date tracking follows shift hours: regular shifts run 18:00–08:30; Sunday duty runs Sunday 08:30–Monday 08:30. During daytime gaps, the ticker shows the upcoming shift with its exact start and end time.
 - Optional “we are on duty today” scrolling message when your pharmacy name matches that roster date
 
 The display text omits addresses by default. The app scans for compatible BLE names with the `LED_BLE_` prefix instead of assuming one device address.

@@ -54,20 +54,18 @@ def parse_date(value: str) -> date:
 
 
 def active_duty_date(now: datetime | None = None) -> date:
-    """Return the roster date whose duty window contains local time now.
+    """Return the active shift date, or today's upcoming shift date in daytime.
 
     Ordinary shifts run from 18:00 to 08:30 the next morning. Sunday's
-    continuous shift starts at 08:30 Sunday and ends at 08:30 Monday.
-    Between 08:30 and 18:00 on ordinary days, keep showing the prior shift.
+    continuous shift starts at 08:30 Sunday and ends at 08:30 Monday. In the
+    gap after 08:30 and before 18:00, select today's upcoming roster row.
     """
     now = now or datetime.now().astimezone()
     current = now.date()
     at = now.timetz().replace(tzinfo=None)
-    if current.weekday() == 6 and at >= time(8, 30):
-        return current
-    if at >= time(18, 0):
-        return current
-    return current - timedelta(days=1)
+    if at < time(8, 30):
+        return current - timedelta(days=1)
+    return current
 
 
 def canonical_record(raw: dict) -> dict:
@@ -78,16 +76,22 @@ def canonical_record(raw: dict) -> dict:
     return {"date": d.isoformat(), "pharmacy": name}
 
 
+def shift_window_label(d: date) -> str:
+    months = ("OCAK", "ŞUBAT", "MART", "NİSAN", "MAYIS", "HAZİRAN", "TEMMUZ", "AĞUSTOS", "EYLÜL", "EKİM", "KASIM", "ARALIK")
+    next_day = d + timedelta(days=1)
+    start_time = "08:30" if d.weekday() == 6 else "18:00"
+    return f"{d.day} {months[d.month - 1]} {start_time} - {next_day.day} {months[next_day.month - 1]} 08:30"
+
+
 def format_display(record: dict) -> str:
     d = parse_date(record["date"])
-    months = ("OCAK", "ŞUBAT", "MART", "NİSAN", "MAYIS", "HAZİRAN", "TEMMUZ", "AĞUSTOS", "EYLÜL", "EKİM", "KASIM", "ARALIK")
     pharmacies = []
     for raw_name in record["pharmacy"].split(" / "):
         name = raw_name.strip()
         if not name:
             continue
         pharmacies.append(name if "ECZANE" in normalize_tr(name) else f"{name} ECZANESİ")
-    return f"{d.day} {months[d.month - 1]}  -  BUGÜNÜN NÖBETÇİ ECZANELERİ:  " + "  -  ".join(pharmacies)
+    return f"{shift_window_label(d)} - NÖBETÇİ ECZANELER: " + "  -  ".join(pharmacies)
 
 
 def normalize_tr(value: str) -> str:
@@ -1271,8 +1275,7 @@ class PharmacyPanelApp:
         if own_key not in roster_names:
             return None
         d = parse_date(rec["date"])
-        months = ("OCAK", "ŞUBAT", "MART", "NİSAN", "MAYIS", "HAZİRAN", "TEMMUZ", "AĞUSTOS", "EYLÜL", "EKİM", "KASIM", "ARALIK")
-        return f"{d.day} {months[d.month - 1]} - BUGÜN NÖBETÇİYİZ: {own_name.upper()}"
+        return f"{shift_window_label(d)} - BUGÜN NÖBETÇİYİZ: {own_name.upper()}"
 
     def _update_preview(self):
         if not hasattr(self, "_preview"):
@@ -1601,6 +1604,7 @@ class PharmacyPanelApp:
         if self._auto_reconnect_pending or self.settings.get("last_auto_date") != today:
             rec = self._selected_record(for_today=True)
             if rec:
+                self._select_today_record()
                 def mark_sent(_result):
                     self.settings["last_auto_date"] = today
                     self._auto_reconnect_pending = False
@@ -1652,8 +1656,7 @@ async def send_today_once():
         roster_names = [pharmacy_key(name) for name in record["pharmacy"].split("/") if name.strip()]
         if pharmacy_key(own_name) in roster_names:
             d = parse_date(record["date"])
-            months = ("OCAK", "ŞUBAT", "MART", "NİSAN", "MAYIS", "HAZİRAN", "TEMMUZ", "AĞUSTOS", "EYLÜL", "EKİM", "KASIM", "ARALIK")
-            text = f"{d.day} {months[d.month - 1]} - BUGÜN NÖBETÇİYİZ: {own_name.upper()}"
+            text = f"{shift_window_label(d)} - BUGÜN NÖBETÇİYİZ: {own_name.upper()}"
     options["duty_logo"] = bool(("BUGÜN NÖBETÇİYİZ:" in text) or settings.get("roster_logo_enabled", False))
     from bleak import BleakScanner
     from pypixelcolor import AsyncClient

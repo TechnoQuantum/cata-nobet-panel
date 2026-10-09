@@ -10,7 +10,7 @@ Uygulama kayıtları bu Windows hesabında `%LOCALAPPDATA%\NobetPanel\nobet_list
 
 Uygulama içindeki **Windows açılışında küçültülmüş başlat** ayarı açıksa Windows oturum açılışında görev çubuğuna küçültülmüş olarak açılır. Aynı ayar günlük otomatik gönderimi de etkinleştirir. Uygulama paneli yaklaşık 5 saniyede bir tarar; tek tarama kaçırılması bağlantı kesintisi sayılmaz. Art arda iki taramada panel bulunamazsa çevrimdışı kabul edilir ve yeniden göründüğünde gönderim yapılır.
 
-Nöbet tarihi vardiya saatine göre belirlenir: normal nöbet satırı kendi gününde 18:00’da başlar ve ertesi sabah 08:30’a kadar sürer. Pazar nöbeti Pazar 08:30’da başlar ve Pazartesi 08:30’a kadar devam eder. Böylece gece yarısı yeni günün kaydına erken geçilmez.
+Nöbet tarihi vardiya saatine göre belirlenir: normal nöbet satırı kendi gününde 18:00’da başlar ve ertesi sabah 08:30’a kadar sürer. Pazar nöbeti Pazar 08:30’da başlar ve Pazartesi 08:30’a kadar devam eder. Böylece gece yarısı yeni günün kaydına erken geçilmez. 08:30–18:00 arasındaki boşlukta ekranda bugünün yaklaşan nöbeti, başlangıç ve bitiş saatiyle gösterilir; sabahı bitmiş önceki günün eczanesi ekranda kalmaz.
 
 ## Nöbet listesi
 
@@ -44,7 +44,7 @@ Normal nöbet listesinde kırmızı **E** eczane logosu isteğe bağlıdır; **K
 
 Panel ayarlarında kendi eczane adınızı girip **Biz nöbetçiyken ‘BUGÜN NÖBETÇİYİZ’ göster** seçeneğini açabilirsiniz. Bugün eczane adı eşleşirse tarih ve `BUGÜN NÖBETÇİYİZ: [eczane adı]` mesajı sabit E logosunun yanında kayan yazı olarak gönderilir. Ad eşleşmezse o tarihin normal nöbet listesi gönderilir; bu listede logo yalnızca isteğe bağlı ayar açıksa görünür. Ön izleme yazıyı logo alanının dışına taşırmaz.
 
-E logolu animasyon canlı ekrana tek sefer yüklenir ve GIF döngüsü sürekli oynatmayı ister. Seçili panele kayıt yuvasına animasyon yerine kısa kayan metin yedeği kaydedilir; bu, BLE üzerinden büyük GIF’in iki kez yüklenmesini önler.
+E logolu animasyon canlı ekrana tek sefer yüklenir ve GIF döngüsü sürekli oynatmayı ister. Seçili panele kayıt yuvasına animasyon yerine kısa kayan metin yedeği kaydedilir; bu, BLE üzerinden büyük GIF’in iki kez yüklenmesini önler. Kayan yazının başında vardiyanın tam tarih ve saat aralığı yer alır.
 
 ## Notlar
 
