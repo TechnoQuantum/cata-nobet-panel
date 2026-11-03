@@ -1,0 +1,154 @@
+export global Theme {
+    out property <color> bg: #f3f5f9;
+    out property <color> surface: #ffffff;
+    out property <color> surface-alt: #f7f9fc;
+    out property <color> border: #e2e7ef;
+    out property <color> text: #14213a;
+    out property <color> muted: #66758c;
+    out property <color> primary: #1f5eff;
+    out property <color> primary-soft: #e8efff;
+    out property <color> danger: #d92d20;
+    out property <color> danger-soft: #fdecea;
+    out property <color> success: #079455;
+    out property <color> success-soft: #e7f7ef;
+    out property <color> warn: #b54708;
+    out property <color> warn-soft: #fff4e5;
+    out property <color> nav: #0f1b2e;
+    out property <color> nav-hover: #1a2a44;
+    out property <color> nav-active: #22365a;
+    out property <length> radius: 10px;
+}
+
+export component Card inherits Rectangle {
+    background: Theme.surface;
+    border-radius: Theme.radius;
+    border-width: 1px;
+    border-color: Theme.border;
+}
+
+export component SectionTitle inherits Text {
+    font-size: 15px;
+    font-weight: 600;
+    color: Theme.text;
+}
+
+export component Hint inherits Text {
+    font-size: 12px;
+    color: Theme.muted;
+    wrap: word-wrap;
+}
+
+export component Badge inherits Rectangle {
+    in property <string> text;
+    in property <int> kind; // 0 neutral, 1 ok, 2 warn, 3 error, 4 info
+    border-radius: self.height / 2;
+    height: 24px;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    background: kind == 1 ? Theme.success-soft : kind == 2 ? Theme.warn-soft : kind == 3 ? Theme.danger-soft : kind == 4 ? Theme.primary-soft : Theme.surface-alt;
+    HorizontalLayout {
+        padding-left: 10px;
+        padding-right: 10px;
+        spacing: 6px;
+        Rectangle {
+            width: 8px;
+            height: 8px;
+            y: (parent.height - self.height) / 2;
+            border-radius: 4px;
+            background: kind == 1 ? Theme.success : kind == 2 ? Theme.warn : kind == 3 ? Theme.danger : kind == 4 ? Theme.primary : Theme.muted;
+        }
+        Text {
+            text: root.text;
+            vertical-alignment: center;
+            font-size: 12px;
+            font-weight: 600;
+            color: kind == 1 ? Theme.success : kind == 2 ? Theme.warn : kind == 3 ? Theme.danger : kind == 4 ? Theme.primary : Theme.muted;
+        }
+    }
+}
+
+export component NavItem inherits Rectangle {
+    in property <string> text;
+    in property <string> glyph;
+    in property <bool> active;
+    callback clicked();
+    height: 42px;
+    border-radius: 8px;
+    background: active ? Theme.nav-active : ta.has-hover ? Theme.nav-hover : transparent;
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+        mouse-cursor: pointer;
+    }
+    HorizontalLayout {
+        padding-left: 14px;
+        spacing: 12px;
+        Text {
+            text: root.glyph;
+            width: 20px;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+            font-size: 16px;
+            font-family: "Segoe MDL2 Assets";
+            color: active ? #ffffff : #9fb0cc;
+        }
+        Text {
+            text: root.text;
+            vertical-alignment: center;
+            font-size: 14px;
+            font-weight: active ? 600 : 400;
+            color: active ? #ffffff : #c9d4e6;
+        }
+    }
+}
+
+export component Swatch inherits Rectangle {
+    in property <color> swatch;
+    in property <bool> selected;
+    callback clicked();
+    width: 26px;
+    height: 26px;
+    border-radius: 13px;
+    background: swatch;
+    border-width: selected ? 3px : 1px;
+    border-color: selected ? Theme.primary : Theme.border;
+    TouchArea {
+        clicked => { root.clicked(); }
+        mouse-cursor: pointer;
+    }
+}
+
+export component Segment inherits Rectangle {
+    in property <[string]> items;
+    in-out property <int> current;
+    callback changed(int);
+    height: 34px;
+    border-radius: 8px;
+    background: Theme.surface-alt;
+    border-width: 1px;
+    border-color: Theme.border;
+    HorizontalLayout {
+        padding: 3px;
+        spacing: 3px;
+        for item[i] in root.items: Rectangle {
+            border-radius: 6px;
+            background: i == root.current ? Theme.surface : transparent;
+            drop-shadow-blur: i == root.current ? 3px : 0px;
+            drop-shadow-color: #0000001a;
+            Text {
+                text: item;
+                font-size: 13px;
+                font-weight: i == root.current ? 600 : 400;
+                color: i == root.current ? Theme.text : Theme.muted;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            TouchArea {
+                mouse-cursor: pointer;
+                clicked => {
+                    root.current = i;
+                    root.changed(i);
+                }
+            }
+        }
+    }
+}

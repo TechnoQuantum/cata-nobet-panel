@@ -1,71 +1,83 @@
 # CATA Pharmacy Duty Panel
 
-A Windows desktop app for managing pharmacy duty rosters and sending the current day's pharmacy names to compatible iPIXEL Bluetooth LED matrix panels, including the CATA CT-4568 (96 × 16).
+A Windows app that keeps a pharmacy's duty roster on a Bluetooth LED matrix panel (iPIXEL-compatible, e.g. CATA CT-4568, 96 × 16). It imports the monthly roster, picks the pharmacies on duty for the current shift and sends them to the panel — automatically, every day, including after reboots and power cuts.
 
-The app is an independent community project. It is not affiliated with CATA, iPIXEL, or the authors of the libraries and protocol documentation listed in [Third-party notices](THIRD_PARTY_NOTICES.md).
+Turkish instructions: [README_TR.md](README_TR.md).
 
-## Download
+The app is an independent community project, not affiliated with CATA, iPIXEL or the projects listed in [Third-party notices](THIRD_PARTY_NOTICES.md).
 
-Download **NobetPanel.exe** from the latest [GitHub Release](https://github.com/TechnoQuantum/cata-nobet-panel/releases). It is a single-file Windows executable; Python does not need to be installed. Windows SmartScreen may show a warning because the executable is not code-signed.
+[![Made with Slint](https://raw.githubusercontent.com/slint-ui/slint/master/logo/MadeWithSlint-logo-light.svg)](https://slint.dev)
+
+## Install
+
+1. Download `NobetPanel-<version>.zip` from the [Releases](https://github.com/TechnoQuantum/cata-nobet-panel/releases) page and extract it.
+2. Double-click **Kur.cmd** and accept the administrator prompt.
+
+The installer:
+
+- copies the app to `C:\Program Files\NobetPanel`,
+- moves existing data from `%LOCALAPPDATA%\NobetPanel` (1.x) to `C:\ProgramData\NobetPanel`,
+- installs the **NobetPanel** Windows service, which starts with Windows (delayed start) and updates the panel even when nobody is signed in; it restarts itself if it stops unexpectedly,
+- starts the window minimized at sign-in and adds Start-menu and desktop shortcuts,
+- removes the 1.x sign-in entry.
+
+Uninstall with `uninstall.ps1` in the install folder (`-RemoveData` also deletes the roster and settings).
+
+The executable is not code-signed, so SmartScreen may warn on first start.
+
+## How it works
+
+- **Service and window.** The service does the automatic sending. The window is for editing the roster, changing the look and manual actions. Both use the same data file; a machine-wide lock ensures only one of them talks to the panel at a time, and each picks up the other's changes within seconds.
+- **Survives reboots.** Content is stored in a panel program slot (default 1) and that slot is selected as the panel's startup program. 1.x played the logo ticker from the volatile live slot, so a panel reboot or power cut left it on its default "LED" screen.
+- **Delivery confirmation.** Every 12 KB window and every command waits for the panel's acknowledgement; a send is only reported successful once the panel confirms it. Failed sends retry three times, automatic retries back off (30 s → 10 min).
+- **Re-sends when something changes.** A fingerprint of what the panel shows is stored; when the roster entry or any display setting (logo, colours, speed, effect, font, mirroring, brightness) changes, the panel is updated automatically.
+- **Shift-aware.** Regular shifts run 18:00–08:30, Sunday duty Sunday 08:30–Monday 08:30; the duty date switches at 08:30.
+- **Confirmations.** Sends show a preview first (optional), and deleting records, overwriting imports, clearing panel memory or powering it off ask before acting.
 
 ## Features
 
-- Monthly calendar and roster table, with import from `.xlsx` and `.zip` files
-- Manual and bulk entry of duty dates and pharmacy names
-- Animated preview and controls for text/background color, effect, speed, brightness, font, orientation, and mirroring
-- Manual send for today's or a selected roster entry, plus free-text and image/GIF sending
-- Optional save to a panel slot and advanced iPIXEL commands
-- Optional Windows sign-in startup, minimized to the taskbar
-- Automatic BLE scanning every 5 seconds and daily send when the panel is found or a disconnect is confirmed by two missed scans
-- Optional red pharmacy E logo with a white rim and blinking red frame, followed by a scrolling duty ticker
-- The logo ticker loops continuously from one live-slot upload; a compact scrolling-text copy is saved in the selected slot as a power-cycle fallback
-- Duty-date tracking follows shift hours: regular shifts run 18:00–08:30; Sunday duty runs Sunday 08:30–Monday 08:30. During daytime gaps, the ticker shows the upcoming shift with its exact start and end time.
-- Optional “we are on duty today” scrolling message when your pharmacy name matches that roster date
-
-The display text omits addresses by default. The app scans for compatible BLE names with the `LED_BLE_` prefix instead of assuming one device address.
-
-An anonymized date/name sample that can be loaded through the CSV/text import is available at [`examples/anonymized_roster.csv`](examples/anonymized_roster.csv). Every pharmacy name in the sample is replaced with generic placeholders; it contains no real pharmacy assignments.
-
-The E logo is optional for regular roster sends; enable it with **Kayan nöbet listesinde E logosu göster (isteğe bağlı)**. The logo stays fixed while the ticker scrolls in a separate clipped area beside it. To enable the on-duty message, enter your pharmacy name in **Bizim eczane adımız** and enable the option below it. When that name matches the current duty date, the ticker shows `<date> - BUGÜN NÖBETÇİYİZ: <pharmacy>` with the fixed E logo. Otherwise it shows the regular roster, with the logo only when the optional setting is enabled.
-
-The app window and Windows executable use the custom icon in [`assets/nobet_panel.ico`](assets/nobet_panel.ico); the matching PNG is included for documentation and repackaging.
+- Monthly calendar, roster import from `.xlsx`/`.zip` (chamber monthly lists), CSV/text bulk import with a change summary, CSV export
+- Live LED preview that matches what the panel will show
+- Text and background colour, effect, speed, brightness, custom TTF/OTF font (built-in Unifont covers Turkish)
+- Optional fixed pharmacy "E" logo with a blinking frame beside the scrolling list
+- Optional "BUGÜN NÖBETÇİYİZ" message when your own pharmacy is on duty
+- Orientation and horizontal/vertical mirroring for upside-down mounting
+- Free text and image/GIF sending, panel slot management, device info, time sync, raw commands
+- Log page and log file (`C:\ProgramData\NobetPanel\nobet_panel.log`)
+- Command line: `NobetPanel.exe --send-today [--quiet]` sends today's duty once and writes `last_send.json`
 
 ## Requirements
 
-- Windows 10/11 with a Bluetooth LE adapter
-- A compatible iPIXEL panel powered on and in Bluetooth range
-- Close/disconnect the phone app while connecting: the panel may only allow one BLE client at a time
-- For automatic sending, Windows must be awake and the app running. The startup option launches the app minimized and continues polling for the panel.
+- Windows 10/11 with Bluetooth LE
+- The panel powered on and in range. A weak signal (below about −80 dBm) causes intermittent failures; move the PC closer or use a USB Bluetooth adapter.
+- Close the phone app: the panel accepts only one Bluetooth connection.
 
 ## Build from source
 
-Python 3.12 is recommended. In PowerShell:
+Requires Rust (stable). With the MSVC toolchain just run `./build_windows.ps1`; with the GNU toolchain pass a MinGW-w64 `bin` folder (dlltool, as, windres):
 
 ```powershell
-py -3.12 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python -m pip install -r requirements-build.txt
-./build_windows.ps1
+./build_windows.ps1 -MinGW C:\path\to\mingw64\bin
 ```
 
-The resulting single-file executable is written to `dist/NobetPanel.exe`.
+This runs the tests and writes `dist\NobetPanel.exe` and the installable `dist\NobetPanel-<version>.zip`.
 
-The core source is `nobet_panel.py`. Runtime settings and imported rosters are stored per Windows user in `%LOCALAPPDATA%\NobetPanel\nobet_listesi.json`; this file is not part of this repository or the release asset.
+Source layout: `src/protocol.rs` (iPIXEL BLE protocol), `src/ble.rs` (WinRT Bluetooth), `src/render.rs` (text/logo/GIF rendering), `src/worker.rs` (connection, sending, automatic mode), `src/service.rs` (Windows service), `src/store.rs` (data file), `ui/` (Slint UI). The 1.x Python app is kept in `legacy/`.
 
-## BLE protocol and upstream projects
+For testing without touching the installed copy, set `NOBETPANEL_DATA_DIR` to a separate folder; the app then also uses a separate single-instance lock and never changes the sign-in entry.
 
-This app delegates device commands and image/text encoding to [`pypixelcolor`](https://github.com/lucagoc/pypixelcolor) (MIT). The iPIXEL BLE service/command details are based on the [iPIXEL protocol documentation](https://github.com/cagcoach/ha-ipixel-color/blob/main/iPIXEL-Protocol-Documentation.md). BLE discovery uses [`Bleak`](https://github.com/hbldh/bleak); image handling uses [`Pillow`](https://github.com/python-pillow/Pillow). Versions are pinned or constrained in the requirements files. See [Third-party notices](THIRD_PARTY_NOTICES.md) for license information.
+## Protocol
 
-The generic on-duty message option was inspired by the on-duty display concept shown on the [REGO Nöbet product page](https://regosoft.com.tr/urun/rego-nobet-akilli-nobetci-eczane-tabelasi). No REGO graphics or product assets are included.
+The BLE protocol implementation is written from the [iPIXEL protocol documentation](https://github.com/cagcoach/ha-ipixel-color/blob/main/iPIXEL-Protocol-Documentation.md) and verified byte-for-byte against [`pypixelcolor`](https://github.com/lucagoc/pypixelcolor) 0.5.0 output in the unit tests.
+
+The on-duty message option was inspired by the display concept on the [REGO Nöbet product page](https://regosoft.com.tr/urun/rego-nobet-akilli-nobetci-eczane-tabelasi). No REGO assets are included.
 
 ## Limitations
 
-- Panel behavior varies by firmware. Slot enumeration/readback can be unavailable through the library/device API; the app's slot list may therefore reflect its local send manifest rather than a complete device readback.
-- Automatic sending is best-effort. The PC needs to be awake, Bluetooth enabled, and able to connect to the panel.
-- The small 96 × 16 panel limits how much of a logo and message is visible at once; the ticker scrolls the full message over time.
-- This software has not been validated for emergency alerting or other safety-critical use. Confirm the displayed duty roster against the official source.
+- Panel behaviour varies by firmware. The slot list reflects what this app sent, not a readback from the panel.
+- The PC must be on with Bluetooth enabled for automatic updates.
+- Not validated for safety-critical use; check the displayed roster against the official source.
 
 ## License
 
-No license is granted for this application's original source files. Third-party components retain their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).
+No license is granted for this application's original source files. Third-party components keep their own licenses; see [Third-party notices](THIRD_PARTY_NOTICES.md).
