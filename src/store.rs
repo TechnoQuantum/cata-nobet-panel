@@ -112,6 +112,7 @@ fn d_gif_budget() -> u32 { 40 }
 fn d_width() -> u32 { 96 }
 fn d_height() -> u32 { 16 }
 fn d_scan_interval() -> u32 { 20 }
+fn d_keepalive() -> u32 { 5 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
@@ -178,6 +179,10 @@ pub struct Settings {
     pub resend_on_reappear: bool,
     #[serde(default = "d_scan_interval")]
     pub scan_interval_s: u32,
+    /// Every N minutes re-select the saved program slot, so the panel leaves
+    /// its default screen soon after an unnoticed reboot. 0 = off.
+    #[serde(default = "d_keepalive")]
+    pub keepalive_min: u32,
     /// Ask before every manual send, showing exactly what goes to the panel.
     #[serde(default = "d_true")]
     pub confirm_before_send: bool,

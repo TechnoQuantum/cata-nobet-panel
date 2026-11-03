@@ -98,7 +98,7 @@ impl Worker {
             .name("ble-worker".into())
             .spawn(move || {
                 ble::init_thread();
-                let mut st = State { store, emit, online: None, misses: 0, failures: 0, backoff_until: None, no_record_logged: None };
+                let mut st = State { store, emit, online: None, misses: 0, failures: 0, backoff_until: None, no_record_logged: None, last_keepalive: None, keepalive_failed: false };
                 let mut next_check = Instant::now() + Duration::from_secs(2);
                 // Both processes watch the shared data file for the other's changes.
                 let poll = Duration::from_secs(2);
@@ -152,7 +152,7 @@ pub fn send_blocking(store: Arc<Mutex<Store>>, source: Source, label: &str) -> R
             *sink.lock().unwrap() = Some((ok, detail));
         }
     });
-    let mut st = State { store, emit, online: None, misses: 0, failures: 0, backoff_until: None, no_record_logged: None };
+    let mut st = State { store, emit, online: None, misses: 0, failures: 0, backoff_until: None, no_record_logged: None, last_keepalive: None, keepalive_failed: false };
     let lock = crate::platform::NamedLock::acquire(BLE_LOCK, Duration::from_secs(90));
     if !lock.held() {
         return Err("Arka plan servisi panelle bağlantıda; 90 saniye beklendi.".into());
@@ -170,6 +170,8 @@ struct State {
     failures: u32,
     backoff_until: Option<Instant>,
     no_record_logged: Option<NaiveDate>,
+    last_keepalive: Option<Instant>,
+    keepalive_failed: bool,
 }
 
 struct Target {
@@ -398,6 +400,7 @@ impl State {
             Ok(summary) => {
                 self.failures = 0;
                 self.backoff_until = None;
+                self.last_keepalive = Some(Instant::now());
                 self.log(Level::Ok, format!("{label} — {summary}"));
                 (self.emit)(Event::Done { ok: true, title: "Panel içeriği onayladı".into(), detail: summary });
                 Ok(())
@@ -591,6 +594,37 @@ impl State {
         (self.emit)(Event::Done { ok: true, title: "Bağlantı testi".into(), detail: text });
     }
 
+    /// Re-select the saved program slot. The panel boots to its default
+    /// screen after a power blip or firmware reset that can be too short for
+    /// the scans to notice; this brings the duty list back within minutes.
+    fn keepalive(&mut self, s: &Settings) {
+        if s.keepalive_min == 0 || s.send_method != SendMethod::SlotSelect {
+            return;
+        }
+        let due = self.last_keepalive.map(|t| t.elapsed() >= Duration::from_secs(s.keepalive_min as u64 * 60)).unwrap_or(true);
+        if !due {
+            return;
+        }
+        self.last_keepalive = Some(Instant::now());
+        let slot = s.effective_slot();
+        let result = self.connect(s).and_then(|(conn, _)| self.exec(&conn, &protocol::show_slot(slot), false));
+        match result {
+            Ok(_) => {
+                if self.keepalive_failed {
+                    self.log(Level::Ok, format!("Panel programı (slot {slot}) yeniden seçildi."));
+                }
+                self.keepalive_failed = false;
+            }
+            Err(e) => {
+                if !self.keepalive_failed {
+                    self.log(Level::Warn, format!("Panel programı (slot {slot}) yeniden seçilemedi: {e}"));
+                }
+                self.keepalive_failed = true;
+            }
+        }
+        (self.emit)(Event::Busy(None));
+    }
+
     fn auto_tick(&mut self, mode: AutoMode) {
         let s = self.settings();
         if !s.auto_send {
@@ -667,6 +701,9 @@ impl State {
         } else {
             None
         };
+        if reason.is_none() {
+            self.keepalive(&s);
+        }
         if let Some(reason) = reason {
             self.log(Level::Info, format!("Otomatik gönderim ({reason})."));
             if self.job_send(Source::Record(rec), "Bugünün nöbeti otomatik gönderiliyor…", true).is_err() {
