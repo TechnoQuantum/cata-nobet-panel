@@ -130,6 +130,9 @@ pub struct Delivery {
     pub elapsed: Duration,
 }
 
+/// Error marker: the panel reported "complete" before all data was sent.
+pub const EARLY_COMPLETE: &str = "Panel içeriği kaydetmeden aktarımı bitirdi";
+
 pub struct Connection {
     device: BluetoothLEDevice,
     session: Option<GattSession>,
@@ -316,6 +319,12 @@ impl Connection {
                         break;
                     }
                     Notify::Complete => {
+                        // "Complete" before the last window means the panel did not
+                        // take the data (seen when its slot storage got into a bad
+                        // state: it then kept showing its default screen).
+                        if plan.ack == AckPolicy::PerWindowAndFinal && i + 1 < plan.windows.len() {
+                            return Err(format!("{EARLY_COMPLETE} ({}/{} pencere)", i + 1, plan.windows.len()));
+                        }
                         d.windows_acked += 1;
                         d.complete = true;
                         break;

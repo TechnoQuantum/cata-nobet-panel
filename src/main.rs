@@ -754,6 +754,48 @@ fn main() {
         service::run();
         return;
     }
+    // Maintenance: NobetPanel.exe --command info|show-slot N|delete-slot N|clear|raw HEX
+    if let Some(i) = args.iter().position(|a| a == "--command") {
+        let name = args.get(i + 1).map(String::as_str).unwrap_or("");
+        let arg = args.get(i + 2).cloned().unwrap_or_default();
+        let n = arg.parse::<u8>().unwrap_or(1);
+        let cmd = match name {
+            "info" => Some(DeviceCommand::Info),
+            "show-slot" => Some(DeviceCommand::ShowSlot(n)),
+            "delete-slot" => Some(DeviceCommand::DeleteSlot(n)),
+            "clear" => Some(DeviceCommand::ClearAll),
+            "raw" => {
+                let clean: String = arg.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+                (clean.len() % 2 == 0 && !clean.is_empty())
+                    .then(|| (0..clean.len()).step_by(2).filter_map(|i| u8::from_str_radix(&clean[i..i + 2], 16).ok()).collect())
+                    .map(DeviceCommand::Raw)
+            }
+            _ => None,
+        };
+        let code = match cmd {
+            None => {
+                logfile::write("ERROR", &format!("Bilinmeyen komut: {name} {arg}"));
+                2
+            }
+            Some(cmd) => {
+                let (store, _) = Store::load();
+                match worker::command_blocking(Arc::new(Mutex::new(store)), cmd) {
+                    Ok(d) => {
+                        logfile::write("OK", &format!("Komut satırı: {d}"));
+                        0
+                    }
+                    Err(e) => {
+                        logfile::write("ERROR", &format!("Komut satırı: {e}"));
+                        1
+                    }
+                }
+            }
+        };
+        std::process::exit(code);
+    }
+    if has("--send-today") {
+        std::process::exit(headless_send(has("--quiet")));
+    }
     if !platform::single_instance() {
         if !has("--minimized") {
             platform::message_box(
@@ -763,9 +805,6 @@ fn main() {
             );
         }
         return;
-    }
-    if has("--send-today") {
-        std::process::exit(headless_send(has("--quiet")));
     }
     platform::refresh_startup_path();
     if let Err(e) = run_ui(has("--minimized")) {

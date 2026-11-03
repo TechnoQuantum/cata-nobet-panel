@@ -162,6 +162,30 @@ pub fn send_blocking(store: Arc<Mutex<Store>>, source: Source, label: &str) -> R
     r.map(|_| detail.clone()).map_err(|e| if detail.is_empty() { e } else { detail })
 }
 
+/// Run one device command on the current thread (for `--command`).
+pub fn command_blocking(store: Arc<Mutex<Store>>, cmd: DeviceCommand) -> Result<String, String> {
+    ble::init_thread();
+    let outcome: Arc<Mutex<Option<(bool, String)>>> = Arc::default();
+    let sink = outcome.clone();
+    let emit: Emit = Arc::new(move |e| {
+        if let Event::Done { ok, detail, .. } = e {
+            *sink.lock().unwrap() = Some((ok, detail));
+        }
+    });
+    let lock = crate::platform::NamedLock::acquire(BLE_LOCK, Duration::from_secs(90));
+    if !lock.held() {
+        return Err("Arka plan servisi panelle bağlantıda; 90 saniye beklendi.".into());
+    }
+    let mut st = State { store, emit, online: None, misses: 0, failures: 0, backoff_until: None, no_record_logged: None, last_keepalive: None, keepalive_failed: false };
+    st.job_command(cmd);
+    let result = outcome.lock().unwrap().take();
+    match result {
+        Some((true, d)) => Ok(d),
+        Some((false, d)) => Err(d),
+        None => Err("Sonuç yok".into()),
+    }
+}
+
 struct State {
     store: Arc<Mutex<Store>>,
     emit: Emit,
@@ -442,7 +466,16 @@ impl State {
         let mut steps = Vec::new();
         let upload = |target_slot: u8| -> Result<Delivery, String> {
             let plan = content.payload.plan(target_slot)?;
-            self.exec(&conn, &plan, true)
+            match self.exec(&conn, &plan, true) {
+                Err(e) if e.contains(ble::EARLY_COMPLETE) && target_slot > 0 => {
+                    // Clearing the slot makes the panel accept uploads again.
+                    self.log(Level::Warn, format!("{e}. Slot {target_slot} silinip yeniden yükleniyor."));
+                    self.exec(&conn, &protocol::delete_slot(target_slot), false)?;
+                    thread::sleep(Duration::from_millis(300));
+                    self.exec(&conn, &plan, true)
+                }
+                r => r,
+            }
         };
         let first = match s.send_method {
             SendMethod::Live => upload(0)?,
