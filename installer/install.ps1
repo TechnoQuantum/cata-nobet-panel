@@ -16,6 +16,12 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+trap {
+    Write-Host ""
+    Write-Host "HATA: $_" -ForegroundColor Red
+    Read-Host "Kapatmak için Enter'a basın"
+    exit 1
+}
 
 $principal = [Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
 if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
@@ -45,6 +51,13 @@ Copy-Item $Source $Exe -Force
 foreach ($extra in "README.md", "README_TR.md", "THIRD_PARTY_NOTICES.md", "licenses", "uninstall.ps1") {
     $p = Join-Path $PSScriptRoot $extra
     if (Test-Path $p) { Copy-Item $p $InstallDir -Recurse -Force }
+}
+# The single-file setup carries the license texts flat (no subfolders).
+$flat = @(Get-ChildItem $PSScriptRoot -Filter "*-LICENSE.txt" -ErrorAction SilentlyContinue) +
+        @(Get-ChildItem $PSScriptRoot -Filter "*-MIT.txt" -ErrorAction SilentlyContinue)
+if ($flat) {
+    New-Item -ItemType Directory -Force (Join-Path $InstallDir "licenses") | Out-Null
+    $flat | Copy-Item -Destination (Join-Path $InstallDir "licenses") -Force
 }
 
 Write-Host "3/6 Veriler: $DataDir"
@@ -94,3 +107,4 @@ foreach ($dir in @([Environment]::GetFolderPath("Programs"), [Environment]::GetF
 Start-Process $Exe
 Write-Host ""
 Write-Host "Kurulum tamamlandı. Servis durumu: $((Get-Service $ServiceName).Status)"
+Start-Sleep -Seconds 4

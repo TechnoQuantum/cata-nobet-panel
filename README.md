@@ -10,8 +10,8 @@ The app is an independent community project, not affiliated with CATA, iPIXEL or
 
 ## Install
 
-1. Download `NobetPanel-<version>.zip` from the [Releases](https://github.com/TechnoQuantum/cata-nobet-panel/releases) page and extract it.
-2. Double-click **Kur.cmd** and accept the administrator prompt.
+1. Download `NobetPanel-<version>-Setup.exe` from the [Releases](https://github.com/TechnoQuantum/cata-nobet-panel/releases) page, run it and accept the administrator prompt. (If Windows SmartScreen warns about an unknown publisher, choose *More info → Run anyway*.)
+2. Alternatively download `NobetPanel-<version>.zip`, extract it and double-click **Kur.cmd**.
 
 The installer:
 
@@ -60,7 +60,7 @@ Requires Rust (stable). With the MSVC toolchain just run `./build_windows.ps1`; 
 ./build_windows.ps1 -MinGW C:\path\to\mingw64\bin
 ```
 
-This runs the tests and writes `dist\NobetPanel.exe` and the installable `dist\NobetPanel-<version>.zip`.
+This runs the tests and writes `dist\NobetPanel.exe`, the installable `dist\NobetPanel-<version>.zip` and the single-file `dist\NobetPanel-<version>-Setup.exe` (built with Windows' IExpress).
 
 Source layout: `src/protocol.rs` (iPIXEL BLE protocol), `src/ble.rs` (WinRT Bluetooth), `src/render.rs` (text/logo/GIF rendering), `src/worker.rs` (connection, sending, automatic mode), `src/service.rs` (Windows service), `src/store.rs` (data file), `ui/` (Slint UI). The 1.x Python app is kept in `legacy/`.
 

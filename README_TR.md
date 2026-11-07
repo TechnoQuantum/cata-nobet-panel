@@ -4,8 +4,8 @@ Bu Windows uygulaması nöbet listesini Bluetooth ile 96 × 16 LED panele gönde
 
 ## Kurulum
 
-1. [Sürümler](https://github.com/TechnoQuantum/cata-nobet-panel/releases) sayfasından `NobetPanel-<sürüm>.zip` dosyasını indirip bir klasöre açın.
-2. **Kur.cmd** dosyasına çift tıklayın ve yönetici izni isteğini onaylayın.
+1. [Sürümler](https://github.com/TechnoQuantum/cata-nobet-panel/releases) sayfasından `NobetPanel-<sürüm>-Setup.exe` dosyasını indirip çalıştırın ve yönetici izni isteğini onaylayın. Windows SmartScreen "bilinmeyen yayımcı" uyarısı verirse *Ek bilgi → Yine de çalıştır* seçin.
+2. İsterseniz bunun yerine `NobetPanel-<sürüm>.zip` dosyasını indirip bir klasöre açın ve **Kur.cmd** dosyasına çift tıklayın.
 
 Kurulum şunları yapar:
 

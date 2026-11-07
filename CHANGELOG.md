@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.0.0 - 2026-11-03
+## 2.0.0 - 2026-11-07
 
 Complete rewrite in Rust with a Slint UI. The 1.x Python app is kept in `legacy/`.
 
@@ -15,6 +15,7 @@ Complete rewrite in Rust with a Slint UI. The 1.x Python app is kept in `legacy/
 - The "E" logo sat one row too low inside its frame.
 - Own-pharmacy preview and the actual send disagreed; Turkish upper-casing turned "i" into "I" instead of "İ"; a corrupt data file was overwritten on the next save; more than 255 characters crashed the text encoder.
 - Two copies of the app could run at once and fight over the single Bluetooth connection.
+- The panel sometimes acknowledged every window of an upload as "complete" without storing anything, then showed its default "LED" screen. Such uploads are now detected; the slot is cleared and the content uploaded again.
 
 ### Added
 
@@ -22,6 +23,9 @@ Complete rewrite in Rust with a Slint UI. The 1.x Python app is kept in `legacy/
 - Confirmation dialogs with preview before sending, deleting, overwriting imports, clearing panel memory and powering off.
 - Panel size detection, connection diagnostics, device info, log page and rotating log file.
 - `--send-today [--quiet]` command-line mode.
+- The saved program slot is re-selected every 5 minutes (`keepalive_min`), so the list returns soon after an unnoticed panel restart.
+- Single-file setup `NobetPanel-<version>-Setup.exe` next to the zip package.
+- `--command info|show-slot N|delete-slot N|clear|raw HEX` for diagnostics.
 
 ## 1.0.4 - 2026-10-09
 
