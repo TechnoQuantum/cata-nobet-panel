@@ -1,5 +1,32 @@
 # Changelog
 
+## 2.0.0 - 2026-11-07
+
+Complete rewrite in Rust with a Slint UI. The 1.x Python app is kept in `legacy/`.
+
+### Fixed
+
+- Panel fell back to its default "LED" screen after a reboot or power cut: content was played from the volatile live slot and the saved slot was never selected. Content is now stored in a program slot that is selected as the panel's startup program.
+- Sends were reported successful without the panel confirming them. Every window and command now waits for the panel's acknowledgement (late acknowledgements of earlier commands are ignored), and the final "transfer complete" status is required.
+- Intermittent communication failures: writes used fixed 244-byte chunks regardless of the negotiated MTU, notifications were re-subscribed for every request, and a stale acknowledgement could satisfy the wait for the next window.
+- Button presses were silently ignored while the 5-second background scan ran; failed automatic sends retried every 5 seconds. Jobs are now queued; automatic retries back off from 30 s to 10 min.
+- Changing the logo or display settings did not update the panel; it is now re-sent automatically when its content changes.
+- Logo GIFs were re-encoded with a 256-colour palette per frame, making transfers large and slow. They now use one small global palette and stay under a size budget (≈37 KB).
+- The "E" logo sat one row too low inside its frame.
+- Own-pharmacy preview and the actual send disagreed; Turkish upper-casing turned "i" into "I" instead of "İ"; a corrupt data file was overwritten on the next save; more than 255 characters crashed the text encoder.
+- Two copies of the app could run at once and fight over the single Bluetooth connection.
+- The panel sometimes acknowledged every window of an upload as "complete" without storing anything, then showed its default "LED" screen. Such uploads are now detected; the slot is cleared and the content uploaded again.
+
+### Added
+
+- Windows service (`NobetPanel`) that updates the panel even when nobody is signed in, plus an installer (`Kur.cmd` / `install.ps1`) and `uninstall.ps1`. Service and window share `C:\ProgramData\NobetPanel` and coordinate panel access.
+- Confirmation dialogs with preview before sending, deleting, overwriting imports, clearing panel memory and powering off.
+- Panel size detection, connection diagnostics, device info, log page and rotating log file.
+- `--send-today [--quiet]` command-line mode.
+- The saved program slot is re-selected every 5 minutes (`keepalive_min`), so the list returns soon after an unnoticed panel restart.
+- Single-file setup `NobetPanel-<version>-Setup.exe` next to the zip package.
+- `--command info|show-slot N|delete-slot N|clear|raw HEX` for diagnostics.
+
 ## 1.0.4 - 2026-10-09
 
 - During 08:30–18:00 gaps, select today's upcoming roster and display its exact duty window so the prior shift is not mistaken for the current one.

@@ -1,0 +1,971 @@
+import { Button, LineEdit, CheckBox, Slider, ComboBox, SpinBox, ScrollView, TextEdit, ListView } from "std-widgets.slint";
+import { Theme, Card, SectionTitle, Hint, Badge, NavItem, Swatch, Segment } from "theme.slint";
+
+export struct RecordRow { iso: string, date: string, weekday: string, names: string, today: bool, selected: bool }
+export struct CalDay { day: string, iso: string, names: string, in-month: bool, today: bool, selected: bool, has-record: bool, weekend: bool }
+export struct LogRow { time: string, text: string, level: int }
+export struct SlotRow { slot: int, content: string, updated: string, confirmed: bool }
+export struct DeviceRow { name: string, address: string, rssi: string, selected: bool }
+export struct SwatchItem { hex: string, c: color }
+
+component LedPreview inherits Rectangle {
+    in property <image> source;
+    background: #05080d;
+    border-radius: 8px;
+    clip: true;
+    Image {
+        x: 12px;
+        y: 12px;
+        width: parent.width - 24px;
+        height: parent.height - 24px;
+        source: root.source;
+        image-fit: contain;
+    }
+}
+
+component Field inherits VerticalLayout {
+    in property <string> label;
+    spacing: 4px;
+    Text { text: root.label; font-size: 12px; color: Theme.muted; }
+    @children
+}
+
+component KV inherits HorizontalLayout {
+    in property <string> key;
+    in property <string> value;
+    spacing: 10px;
+    Text { text: root.key; width: 120px; color: Theme.muted; font-size: 13px; }
+    Text { text: root.value; color: Theme.text; font-size: 13px; wrap: word-wrap; horizontal-stretch: 1; }
+}
+
+export component AppWindow inherits Window {
+    title: "Nöbetçi Eczane Paneli";
+    icon: @image-url("../assets/nobet_panel.png");
+    preferred-width: 1240px;
+    preferred-height: 820px;
+    min-width: 1000px;
+    min-height: 680px;
+    background: Theme.bg;
+    default-font-family: "Segoe UI";
+    default-font-size: 13px;
+
+    // ---------- shell ----------
+    in-out property <int> page: 0;
+    in property <string> version: "2.0.0";
+    in property <string> panel-text: "Panel durumu bilinmiyor";
+    in property <int> panel-kind: 0;
+    in property <bool> busy: false;
+    in property <string> busy-text;
+    in property <float> progress: -1;
+    in property <int> queue-count: 0;
+    in property <bool> banner-visible: false;
+    in property <bool> banner-ok: true;
+    in property <string> banner-title;
+    in property <string> banner-text;
+    callback banner-close();
+
+    // ---------- dashboard ----------
+    in property <string> today-title;
+    in property <string> today-window;
+    in property <string> today-names;
+    in property <string> today-status;
+    in property <int> today-status-kind: 0;
+    in property <bool> today-has-record;
+    in property <bool> own-duty;
+    in property <image> preview;
+    in property <[string]> preview-modes: ["Bugünün nöbeti", "Seçili gün", "Serbest metin"];
+    in-out property <int> preview-mode: 0;
+    in property <string> preview-caption;
+    in property <string> preview-text;
+    in property <string> preview-warnings;
+    in property <string> preview-error;
+    in-out property <string> free-text;
+    in property <string> auto-summary;
+    in property <string> last-send;
+    callback send-current();
+    callback send-image();
+    callback preview-mode-changed(int);
+    callback free-text-edited(string);
+
+    // ---------- roster ----------
+    in property <string> month-title;
+    in property <[CalDay]> cal-days;
+    in property <[RecordRow]> records;
+    in property <string> record-count;
+    in-out property <string> form-date;
+    in-out property <string> form-names;
+    in-out property <string> bulk-text;
+    callback month-prev();
+    callback month-next();
+    callback month-today();
+    callback select-date(string);
+    callback form-date-edited(string);
+    callback save-record();
+    callback delete-record();
+    callback import-bulk();
+    callback import-csv();
+    callback import-excel();
+    callback export-csv();
+
+    // ---------- display ----------
+    in property <[SwatchItem]> swatches;
+    in property <string> text-color;
+    in property <string> bg-color;
+    in property <color> text-color-value;
+    in property <color> bg-color-value;
+    in property <[string]> animation-names;
+    in-out property <int> animation-index;
+    in-out property <float> speed: 70;
+    in-out property <float> brightness: 70;
+    in property <string> font-label;
+    in-out property <bool> logo-enabled;
+    in property <[string]> logo-mode-names;
+    in-out property <int> logo-mode-index;
+    in-out property <string> own-name;
+    in-out property <bool> own-enabled;
+    in-out property <bool> mirror-h;
+    in-out property <bool> mirror-v;
+    in-out property <int> orientation-index;
+    callback display-changed();
+    callback set-text-color(string);
+    callback set-bg-color(string);
+    callback choose-font();
+    callback reset-font();
+    callback apply-orientation();
+    callback apply-brightness();
+
+    // ---------- panel ----------
+    in property <[DeviceRow]> devices;
+    in property <string> device-name;
+    in property <string> device-address;
+    in property <string> panel-size;
+    in property <[string]> send-method-names;
+    in-out property <int> send-method-index;
+    in-out property <int> save-slot: 1;
+    in property <[SlotRow]> slots;
+    in-out property <bool> auto-send;
+    in-out property <bool> resend-reappear;
+    in-out property <int> scan-interval: 20;
+    in-out property <bool> startup;
+    in-out property <bool> confirm-send: true;
+    in-out property <int> gif-budget: 40;
+    in-out property <string> raw-hex;
+    callback scan();
+    callback select-device(int);
+    callback forget-device();
+    callback diagnose();
+    callback device-info();
+    callback power-on();
+    callback power-off();
+    callback sync-time();
+    callback panel-settings-changed();
+    callback toggle-startup(bool);
+    callback show-slot(int);
+    callback delete-slot(int);
+    callback clear-memory();
+    callback send-raw();
+
+    // ---------- log ----------
+    in property <[LogRow]> logs;
+    in property <string> log-path;
+    callback open-log();
+    callback open-data-folder();
+
+    // ---------- dialogs ----------
+    in property <bool> confirm-visible: false;
+    in property <string> confirm-title;
+    in property <string> confirm-text;
+    in property <string> confirm-ok: "Tamam";
+    in property <string> confirm-alt;
+    in property <bool> confirm-danger;
+    in property <bool> confirm-preview;
+    in property <string> confirm-details;
+    in property <string> confirm-warnings;
+    in property <bool> confirm-show-dont-ask;
+    in-out property <bool> confirm-dont-ask;
+    callback confirm-accept();
+    callback confirm-cancel();
+    callback confirm-alternative();
+
+    HorizontalLayout {
+        // ===== Sidebar =====
+        Rectangle {
+            width: 228px;
+            background: Theme.nav;
+            VerticalLayout {
+                padding: 14px;
+                spacing: 6px;
+                HorizontalLayout {
+                    padding-top: 6px;
+                    padding-bottom: 18px;
+                    padding-left: 6px;
+                    spacing: 10px;
+                    Image {
+                        source: @image-url("../assets/nobet_panel.png");
+                        width: 34px;
+                        height: 34px;
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        Text { text: "Nöbet Paneli"; color: #ffffff; font-size: 16px; font-weight: 700; }
+                        Text { text: "iPIXEL BLE · v" + root.version; color: #8fa2c2; font-size: 11px; }
+                    }
+                }
+                NavItem { glyph: "\u{E80F}"; text: "Pano"; active: root.page == 0; clicked => { root.page = 0; } }
+                NavItem { glyph: "\u{E787}"; text: "Nöbet listesi"; active: root.page == 1; clicked => { root.page = 1; } }
+                NavItem { glyph: "\u{E790}"; text: "Görünüm"; active: root.page == 2; clicked => { root.page = 2; } }
+                NavItem { glyph: "\u{E713}"; text: "Panel ve bağlantı"; active: root.page == 3; clicked => { root.page = 3; } }
+                NavItem { glyph: "\u{E81C}"; text: "Günlük"; active: root.page == 4; clicked => { root.page = 4; } }
+                Rectangle { vertical-stretch: 1; }
+                Rectangle {
+                    border-radius: 8px;
+                    background: Theme.nav-hover;
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 4px;
+                        Text { text: "Otomatik gönderim"; color: #8fa2c2; font-size: 11px; }
+                        Text { text: root.auto-send ? "Açık" : "Kapalı"; color: root.auto-send ? #6ce9a6 : #fda29b; font-size: 13px; font-weight: 600; }
+                        Text { text: root.auto-summary; color: #c9d4e6; font-size: 11px; wrap: word-wrap; }
+                    }
+                }
+            }
+        }
+
+        // ===== Main column =====
+        VerticalLayout {
+            horizontal-stretch: 1;
+            padding: 18px;
+            spacing: 12px;
+
+            // Header
+            HorizontalLayout {
+                spacing: 12px;
+                height: 40px;
+                Text {
+                    text: root.page == 0 ? "Pano" : root.page == 1 ? "Nöbet listesi" : root.page == 2 ? "Görünüm" : root.page == 3 ? "Panel ve bağlantı" : "Günlük";
+                    font-size: 22px;
+                    font-weight: 700;
+                    color: Theme.text;
+                    vertical-alignment: center;
+                }
+                Rectangle { horizontal-stretch: 1; }
+                if root.busy: HorizontalLayout {
+                    spacing: 8px;
+                    alignment: end;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 3px;
+                        Text { text: root.busy-text + (root.queue-count > 0 ? "  (+" + root.queue-count + " sırada)" : ""); color: Theme.primary; font-size: 12px; font-weight: 600; horizontal-alignment: right; }
+                        if root.progress >= 0: Rectangle {
+                            height: 4px;
+                            width: 220px;
+                            border-radius: 2px;
+                            background: Theme.primary-soft;
+                            Rectangle {
+                                x: 0;
+                                height: parent.height;
+                                width: parent.width * clamp(root.progress, 0, 1);
+                                border-radius: 2px;
+                                background: Theme.primary;
+                            }
+                        }
+                    }
+                }
+                Badge {
+                    y: (parent.height - self.height) / 2;
+                    text: root.panel-text;
+                    kind: root.panel-kind;
+                }
+            }
+
+            // Result banner
+            if root.banner-visible: Rectangle {
+                border-radius: Theme.radius;
+                background: root.banner-ok ? Theme.success-soft : Theme.danger-soft;
+                border-width: 1px;
+                border-color: root.banner-ok ? #abefc6 : #fecdca;
+                HorizontalLayout {
+                    padding: 12px;
+                    spacing: 12px;
+                    Text { text: root.banner-ok ? "✔" : "✖"; font-size: 18px; color: root.banner-ok ? Theme.success : Theme.danger; }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 2px;
+                        Text { text: root.banner-title; font-weight: 700; color: root.banner-ok ? Theme.success : Theme.danger; }
+                        Text { text: root.banner-text; wrap: word-wrap; color: Theme.text; }
+                    }
+                    Button { text: "Kapat"; clicked => { root.banner-close(); } }
+                }
+            }
+
+            // ===== Page 0: Dashboard =====
+            if root.page == 0: HorizontalLayout {
+                spacing: 14px;
+                vertical-stretch: 1;
+                VerticalLayout {
+                    horizontal-stretch: 3;
+                    spacing: 14px;
+                    Card {
+                        vertical-stretch: 0;
+                        VerticalLayout {
+                            padding: 16px;
+                            alignment: start;
+                            spacing: 12px;
+                            HorizontalLayout {
+                                SectionTitle { text: "Panel önizlemesi"; vertical-alignment: center; }
+                                Rectangle { horizontal-stretch: 1; }
+                                Segment {
+                                    width: 420px;
+                                    items: root.preview-modes;
+                                    current <=> root.preview-mode;
+                                    changed(i) => { root.preview-mode-changed(i); }
+                                }
+                            }
+                            LedPreview { height: 150px; source: root.preview; }
+                            if root.preview-error != "": Text { text: root.preview-error; color: Theme.danger; wrap: word-wrap; }
+                            if root.preview-error == "": VerticalLayout {
+                                spacing: 4px;
+                                Text { text: root.preview-text; wrap: word-wrap; color: Theme.text; font-size: 13px; }
+                                Hint { text: root.preview-caption; }
+                            }
+                            if root.preview-warnings != "": Rectangle {
+                                background: Theme.warn-soft;
+                                border-radius: 8px;
+                                HorizontalLayout {
+                                    padding: 10px;
+                                    Text { text: "⚠ " + root.preview-warnings; color: Theme.warn; wrap: word-wrap; font-size: 12px; }
+                                }
+                            }
+                            if root.preview-mode == 2: LineEdit {
+                                placeholder-text: "Panelde gösterilecek serbest metni yazın…";
+                                text <=> root.free-text;
+                                edited(t) => { root.free-text-edited(t); }
+                            }
+                            HorizontalLayout {
+                                spacing: 10px;
+                                Button {
+                                    text: root.preview-mode == 0 ? "Bugünün nöbetini panele gönder…" : root.preview-mode == 1 ? "Seçili günü panele gönder…" : "Serbest metni panele gönder…";
+                                    primary: true;
+                                    enabled: root.preview-error == "";
+                                    horizontal-stretch: 1;
+                                    clicked => { root.send-current(); }
+                                }
+                                Button { text: "Görsel / GIF gönder…"; clicked => { root.send-image(); } }
+                            }
+                        }
+                    }
+                    Card {
+                        vertical-stretch: 1;
+                        VerticalLayout {
+                            padding: 16px;
+                            alignment: start;
+                            spacing: 8px;
+                            SectionTitle { text: "Son onaylanan gönderim"; }
+                            Text { text: root.last-send == "" ? "Bu oturumda henüz onaylanmış gönderim yok." : root.last-send; wrap: word-wrap; color: Theme.text; }
+                            Hint { text: "Gönderim yalnızca panel tüm veriyi aldığını onayladığında (ACK) başarılı sayılır. Ayrıntılar Günlük sayfasında."; }
+                            Rectangle { vertical-stretch: 1; }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    horizontal-stretch: 2;
+                    spacing: 14px;
+                    Card {
+                        vertical-stretch: 0;
+                        VerticalLayout {
+                            padding: 16px;
+                            alignment: start;
+                            spacing: 10px;
+                            HorizontalLayout {
+                                SectionTitle { text: "Bugünün nöbeti"; vertical-alignment: center; }
+                                Rectangle { horizontal-stretch: 1; }
+                                Badge { text: root.today-status; kind: root.today-status-kind; }
+                            }
+                            Text { text: root.today-title; color: Theme.muted; }
+                            Text { text: root.today-window; font-size: 15px; font-weight: 600; color: Theme.text; }
+                            Text {
+                                text: root.today-has-record ? root.today-names : "Bu tarih için nöbet kaydı yok.";
+                                font-size: 20px;
+                                font-weight: 700;
+                                color: root.today-has-record ? Theme.text : Theme.danger;
+                                wrap: word-wrap;
+                            }
+                            if root.own-duty: Badge { text: "Bugün biz nöbetçiyiz"; kind: 4; }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Button { text: "Listeyi aç"; clicked => { root.page = 1; } }
+                                Button { text: "Görünümü düzenle"; clicked => { root.page = 2; } }
+                            }
+                        }
+                    }
+                    Card {
+                        vertical-stretch: 1;
+                        VerticalLayout {
+                            padding: 16px;
+                            alignment: start;
+                            spacing: 10px;
+                            SectionTitle { text: "Otomatik gönderim"; }
+                            CheckBox {
+                                text: "Nöbet günü değişince ve panel yeniden görününce gönder";
+                                checked <=> root.auto-send;
+                                toggled => { root.panel-settings-changed(); }
+                            }
+                            Text { text: root.auto-summary; wrap: word-wrap; color: Theme.text; }
+                            Hint { text: "Nöbet günü 08:30'da değişir (Pazar nöbeti Pazar 08:30 – Pazartesi 08:30). Uygulama açık ve panel Bluetooth menzilinde olmalıdır."; }
+                            Rectangle { vertical-stretch: 1; }
+                        }
+                    }
+                }
+            }
+
+            // ===== Page 1: Roster =====
+            if root.page == 1: HorizontalLayout {
+                spacing: 14px;
+                vertical-stretch: 1;
+                Card {
+                    horizontal-stretch: 1;
+                    VerticalLayout {
+                        padding: 16px;
+                        spacing: 10px;
+                        HorizontalLayout {
+                            spacing: 8px;
+                            Button { text: "‹"; width: 40px; clicked => { root.month-prev(); } }
+                            Text { text: root.month-title; font-size: 17px; font-weight: 700; color: Theme.text; horizontal-alignment: center; vertical-alignment: center; horizontal-stretch: 1; }
+                            Button { text: "Bugün"; clicked => { root.month-today(); } }
+                            Button { text: "›"; width: 40px; clicked => { root.month-next(); } }
+                        }
+                        Rectangle {
+                            height: 18px;
+                            for d[i] in ["Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz"]: Text {
+                                x: i * (grid.cw + 6px);
+                                width: grid.cw;
+                                text: d;
+                                horizontal-alignment: center;
+                                color: i >= 5 ? Theme.danger : Theme.muted;
+                                font-size: 12px;
+                                font-weight: 600;
+                            }
+                        }
+                        grid := Rectangle {
+                            vertical-stretch: 1;
+                            property <length> cw: (self.width - 6 * 6px) / 7;
+                            property <length> ch: (self.height - 5 * 6px) / 6;
+                            for c[i] in root.cal-days: Rectangle {
+                                x: mod(i, 7) * (grid.cw + 6px);
+                                y: floor(i / 7) * (grid.ch + 6px);
+                                width: grid.cw;
+                                height: grid.ch;
+                                border-radius: 8px;
+                                background: c.selected ? Theme.primary : c.today ? Theme.primary-soft : c.in-month ? (cta.has-hover ? Theme.surface-alt : Theme.surface) : Theme.bg;
+                                border-width: 1px;
+                                border-color: c.selected ? Theme.primary : c.today ? #b2c7ff : Theme.border;
+                                cta := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.select-date(c.iso); }
+                                }
+                                VerticalLayout {
+                                    padding: 6px;
+                                    spacing: 2px;
+                                    HorizontalLayout {
+                                        Text {
+                                            text: c.day;
+                                            font-weight: 700;
+                                            font-size: 13px;
+                                            color: c.selected ? #ffffff : !c.in-month ? #a9b4c4 : c.weekend ? Theme.danger : Theme.text;
+                                        }
+                                        Rectangle { horizontal-stretch: 1; }
+                                        if c.has-record && !c.selected: Rectangle { width: 6px; height: 6px; border-radius: 3px; background: Theme.success; }
+                                    }
+                                    Text {
+                                        text: c.names;
+                                        font-size: 11px;
+                                        wrap: word-wrap;
+                                        overflow: elide;
+                                        vertical-stretch: 1;
+                                        color: c.selected ? #e8efff : Theme.muted;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    width: 440px;
+                    spacing: 14px;
+                    Card {
+                        vertical-stretch: 0;
+                        VerticalLayout {
+                            padding: 16px;
+                            alignment: start;
+                            spacing: 10px;
+                            SectionTitle { text: "Kayıt düzenle"; }
+                            Field {
+                                label: "Tarih (GG.AA.YYYY veya YYYY-AA-GG)";
+                                LineEdit { text <=> root.form-date; edited(t) => { root.form-date-edited(t); } }
+                            }
+                            Field {
+                                label: "Nöbetçi eczaneler (birden fazla adı / ile ayırın)";
+                                LineEdit { text <=> root.form-names; placeholder-text: "Örn. Merkez / Şifa"; accepted => { root.save-record(); } }
+                            }
+                            HorizontalLayout {
+                                spacing: 8px;
+                                Button { text: "Kaydet"; primary: true; horizontal-stretch: 1; clicked => { root.save-record(); } }
+                                Button { text: "Sil…"; clicked => { root.delete-record(); } }
+                            }
+                        }
+                    }
+                    Card {
+                        vertical-stretch: 1;
+                        VerticalLayout {
+                            padding: 16px;                            spacing: 8px;
+                            HorizontalLayout {
+                                SectionTitle { text: "Tüm kayıtlar"; vertical-alignment: center; }
+                                Rectangle { horizontal-stretch: 1; }
+                                Hint { text: root.record-count; vertical-alignment: center; }
+                            }
+                            ListView {
+                                vertical-stretch: 1;
+                                for r in root.records: Rectangle {
+                                    height: 40px;
+                                    background: r.selected ? Theme.primary-soft : rta.has-hover ? Theme.surface-alt : transparent;
+                                    border-radius: 6px;
+                                    rta := TouchArea { clicked => { root.select-date(r.iso); } }
+                                    HorizontalLayout {
+                                        padding-left: 8px;
+                                        padding-right: 8px;
+                                        spacing: 10px;
+                                        VerticalLayout {
+                                            width: 92px;
+                                            alignment: center;
+                                            Text { text: r.date; font-weight: 600; color: r.today ? Theme.primary : Theme.text; }
+                                            Text { text: r.weekday; font-size: 11px; color: Theme.muted; }
+                                        }
+                                        Text { text: r.names; vertical-alignment: center; overflow: elide; horizontal-stretch: 1; color: Theme.text; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Card {
+                        vertical-stretch: 0;
+                        VerticalLayout {
+                            padding: 16px;
+                            alignment: start;
+                            spacing: 8px;
+                            SectionTitle { text: "İçe / dışa aktar"; }
+                            TextEdit {
+                                height: 80px;
+                                text <=> root.bulk-text;
+                                font-size: 12px;
+                            }
+                            Hint { text: "Satır biçimi: tarih | eczane 1 | eczane 2 (sekme, |, ; veya , ile). Adres yazmayın. Excel: A sütununda gün, B–C sütunlarında eczane adları."; }
+                            HorizontalLayout {
+                                spacing: 6px;
+                                Button { text: "Metni içe al…"; clicked => { root.import-bulk(); } }
+                                Button { text: "CSV aç…"; clicked => { root.import-csv(); } }
+                                Button { text: "Excel / ZIP…"; clicked => { root.import-excel(); } }
+                                Button { text: "CSV kaydet…"; clicked => { root.export-csv(); } }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ===== Page 2: Display =====
+            if root.page == 2: HorizontalLayout {
+                spacing: 14px;
+                vertical-stretch: 1;
+                sv := ScrollView {
+                    horizontal-stretch: 1;
+                    content-height: inner.preferred-height;
+                    inner := VerticalLayout {
+                        padding-right: 16px;
+                        width: sv.visible-width;
+                        spacing: 14px;
+                        Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                alignment: start;
+                                spacing: 12px;
+                                SectionTitle { text: "Renkler"; }
+                                Text { text: "Yazı rengi · " + root.text-color; color: Theme.muted; font-size: 12px; }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+                                    for s in root.swatches: Swatch {
+                                        swatch: s.c;
+                                        selected: s.hex == root.text-color;
+                                        clicked => { root.set-text-color(s.hex); }
+                                    }
+                                    LineEdit {
+                                        width: 110px;
+                                        text: root.text-color;
+                                        accepted(t) => { root.set-text-color(t); }
+                                    }
+                                }
+                                Text { text: "Arka plan · " + root.bg-color; color: Theme.muted; font-size: 12px; }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    alignment: start;
+                                    for s in root.swatches: Swatch {
+                                        swatch: s.c;
+                                        selected: s.hex == root.bg-color;
+                                        clicked => { root.set-bg-color(s.hex); }
+                                    }
+                                    LineEdit {
+                                        width: 110px;
+                                        text: root.bg-color;
+                                        accepted(t) => { root.set-bg-color(t); }
+                                    }
+                                }
+                            }
+                        }
+                        Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                alignment: start;
+                                spacing: 12px;
+                                SectionTitle { text: "Yazı efekti ve yazı tipi"; }
+                                Field {
+                                    label: "Efekt";
+                                    ComboBox {
+                                        model: root.animation-names;
+                                        current-index <=> root.animation-index;
+                                        selected => { root.display-changed(); }
+                                    }
+                                }
+                                Field {
+                                    label: "Hız · " + round(root.speed);
+                                    Slider {
+                                        minimum: 1;
+                                        maximum: 100;
+                                        value <=> root.speed;
+                                        changed => { root.display-changed(); }
+                                    }
+                                }
+                                Field {
+                                    label: "Yazı tipi · " + root.font-label;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        Button { text: "TTF / OTF seç…"; clicked => { root.choose-font(); } }
+                                        Button { text: "Unifont (varsayılan)"; clicked => { root.reset-font(); } }
+                                    }
+                                }
+                                Hint { text: "Varsayılan Unifont, panelin 16 piksellik satırı için tasarlanmış net bir bitmap yazı tipidir; Türkçe karakterlerin tümünü içerir."; }
+                            }
+                        }
+                        Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                alignment: start;
+                                spacing: 10px;
+                                SectionTitle { text: "E logosu ve “BUGÜN NÖBETÇİYİZ”"; }
+                                CheckBox { text: "Nöbet listesinde E logosu göster"; checked <=> root.logo-enabled; toggled => { root.display-changed(); } }
+                                Field {
+                                    label: "Logo biçimi";
+                                    ComboBox {
+                                        model: root.logo-mode-names;
+                                        current-index <=> root.logo-mode-index;
+                                        selected => { root.display-changed(); }
+                                    }
+                                }
+                                Hint { text: "Sabit logo, yanıp sönen çerçeveli E işaretini kayan yazının yanında sabit tutar (tek, sıkıştırılmış GIF). Yazıyla kayan logo, panelin kendi kayan yazısını kullanır ve en küçük aktarımdır (deneysel)."; }
+                                Field {
+                                    label: "Bizim eczane adımız";
+                                    LineEdit { text <=> root.own-name; placeholder-text: "Örn. Şifa"; edited => { root.display-changed(); } }
+                                }
+                                CheckBox { text: "Biz nöbetçiyken “BUGÜN NÖBETÇİYİZ” mesajını logoyla göster"; checked <=> root.own-enabled; toggled => { root.display-changed(); } }
+                            }
+                        }
+                        Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                alignment: start;
+                                spacing: 10px;
+                                SectionTitle { text: "Parlaklık, yön ve ayna"; }
+                                Field {
+                                    label: "Parlaklık · %" + round(root.brightness);
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        Slider { minimum: 1; maximum: 100; value <=> root.brightness; changed => { root.display-changed(); } horizontal-stretch: 1; }
+                                        Button { text: "Şimdi uygula"; clicked => { root.apply-brightness(); } }
+                                    }
+                                }
+                                Field {
+                                    label: "Ekran yönü";
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        ComboBox {
+                                            model: ["0 · Normal", "1 · 90°", "2 · 180°", "3 · 270°"];
+                                            current-index <=> root.orientation-index;
+                                            selected => { root.display-changed(); }
+                                            horizontal-stretch: 1;
+                                        }
+                                        Button { text: "Şimdi uygula"; clicked => { root.apply-orientation(); } }
+                                    }
+                                }
+                                HorizontalLayout {
+                                    spacing: 20px;
+                                    CheckBox { text: "Yatay ayna"; checked <=> root.mirror-h; toggled => { root.display-changed(); } }
+                                    CheckBox { text: "Dikey ayna"; checked <=> root.mirror-v; toggled => { root.display-changed(); } }
+                                }
+                                Hint { text: "Parlaklık ve yön her gönderimde de uygulanır. Ayna seçilince yazı, uygulamada aynalanmış bir animasyona çevrilir."; }
+                            }
+                        }
+                    }
+                }
+                VerticalLayout {
+                    width: 420px;
+                    spacing: 14px;
+                    Card {
+                        vertical-stretch: 0;
+                        VerticalLayout {
+                            padding: 16px;
+                            alignment: start;
+                            spacing: 10px;
+                            SectionTitle { text: "Canlı önizleme"; }
+                            LedPreview { height: 120px; source: root.preview; }
+                            Text { text: root.preview-error != "" ? root.preview-error : root.preview-text; wrap: word-wrap; color: root.preview-error != "" ? Theme.danger : Theme.text; }
+                            Hint { text: root.preview-caption; }
+                            if root.preview-warnings != "": Text { text: "⚠ " + root.preview-warnings; color: Theme.warn; wrap: word-wrap; font-size: 12px; }
+                        }
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+
+            // ===== Page 3: Panel =====
+            if root.page == 3: psv := ScrollView {
+                vertical-stretch: 1;
+                content-height: pinner.preferred-height;
+                pinner := HorizontalLayout {
+                    padding-right: 16px;
+                    width: psv.visible-width;
+                    spacing: 14px;
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 14px;
+                        Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                alignment: start;
+                                spacing: 10px;
+                                SectionTitle { text: "Panel seçimi"; }
+                                KV { key: "Seçili panel"; value: root.device-name == "" ? "Henüz seçilmedi (ilk bulunan LED_BLE_ panel kullanılır)" : root.device-name; }
+                                KV { key: "Adres"; value: root.device-address == "" ? "—" : root.device-address; }
+                                KV { key: "Ekran"; value: root.panel-size; }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Button { text: "Panelleri tara"; primary: true; clicked => { root.scan(); } }
+                                    Button { text: "Bağlantı testi"; clicked => { root.diagnose(); } }
+                                    Button { text: "Bilgi oku"; clicked => { root.device-info(); } }
+                                    Button { text: "Unut"; clicked => { root.forget-device(); } }
+                                }
+                                for d[i] in root.devices: Rectangle {
+                                    height: 44px;
+                                    border-radius: 8px;
+                                    background: d.selected ? Theme.primary-soft : dta.has-hover ? Theme.surface-alt : Theme.surface;
+                                    border-width: 1px;
+                                    border-color: d.selected ? #b2c7ff : Theme.border;
+                                    dta := TouchArea { clicked => { root.select-device(i); } mouse-cursor: pointer; }
+                                    HorizontalLayout {
+                                        padding-left: 12px;
+                                        padding-right: 12px;
+                                        spacing: 10px;
+                                        Text { text: d.selected ? "●" : "○"; color: Theme.primary; vertical-alignment: center; }
+                                        Text { text: d.name; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; color: Theme.text; }
+                                        Text { text: d.address; color: Theme.muted; vertical-alignment: center; font-size: 12px; }
+                                        Text { text: d.rssi; color: Theme.muted; vertical-alignment: center; font-size: 12px; width: 70px; horizontal-alignment: right; }
+                                    }
+                                }
+                                Hint { text: "Panel aynı anda tek Bluetooth bağlantısı kabul eder: telefon uygulaması bağlıyken bu uygulama bağlanamaz."; }
+                            }
+                        }
+                        Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                alignment: start;
+                                spacing: 10px;
+                                SectionTitle { text: "Gönderim yöntemi"; }
+                                ComboBox {
+                                    model: root.send-method-names;
+                                    current-index <=> root.send-method-index;
+                                    selected => { root.panel-settings-changed(); }
+                                }
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    Text { text: "Kayıt slotu"; vertical-alignment: center; color: Theme.text; }
+                                    SpinBox { minimum: 1; maximum: 10; value <=> root.save-slot; edited => { root.panel-settings-changed(); } width: 110px; }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+                                Hint { text: "Önerilen yöntem içeriği slota kaydeder ve o slotu panelin kalıcı programı yapar; elektrik kesilip gelince panel genel “LED” ekranı yerine nöbet listesini gösterir. Eski yöntem aynı veriyi iki kez gönderir."; }
+                                CheckBox { text: "Elle göndermeden önce önizlemeyle onay iste"; checked <=> root.confirm-send; toggled => { root.panel-settings-changed(); } }
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    Text { text: "GIF boyut sınırı (KB)"; vertical-alignment: center; color: Theme.text; }
+                                    SpinBox { minimum: 8; maximum: 200; value <=> root.gif-budget; edited => { root.panel-settings-changed(); } width: 110px; }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+                            }
+                        }
+                        Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                alignment: start;
+                                spacing: 10px;
+                                SectionTitle { text: "Otomatik çalışma"; }
+                                CheckBox { text: "Otomatik gönderim"; checked <=> root.auto-send; toggled => { root.panel-settings-changed(); } }
+                                CheckBox { text: "Panel yeniden görününce (ör. elektrik kesintisi) tekrar gönder"; checked <=> root.resend-reappear; toggled => { root.panel-settings-changed(); } }
+                                HorizontalLayout {
+                                    spacing: 10px;
+                                    Text { text: "Tarama aralığı (sn)"; vertical-alignment: center; color: Theme.text; }
+                                    SpinBox { minimum: 5; maximum: 600; value <=> root.scan-interval; edited => { root.panel-settings-changed(); } width: 110px; }
+                                    Rectangle { horizontal-stretch: 1; }
+                                }
+                                CheckBox { text: "Windows oturumu açılınca küçültülmüş başlat"; checked <=> root.startup; toggled => { root.toggle-startup(self.checked); } }
+                            }
+                        }
+                    }
+                    VerticalLayout {
+                        horizontal-stretch: 1;
+                        spacing: 14px;
+                        Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                alignment: start;
+                                spacing: 10px;
+                                SectionTitle { text: "Panel komutları"; }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    Button { text: "Aç"; horizontal-stretch: 1; clicked => { root.power-on(); } }
+                                    Button { text: "Kapat…"; horizontal-stretch: 1; clicked => { root.power-off(); } }
+                                    Button { text: "Saati eşitle"; horizontal-stretch: 1; clicked => { root.sync-time(); } }
+                                }
+                            }
+                        }
+                        Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                alignment: start;
+                                spacing: 8px;
+                                HorizontalLayout {
+                                    SectionTitle { text: "Slotlar"; vertical-alignment: center; }
+                                    Rectangle { horizontal-stretch: 1; }
+                                    Button { text: "Tüm belleği temizle…"; clicked => { root.clear-memory(); } }
+                                }
+                                Hint { text: "Panel slot içeriğini geri okumaya izin vermiyor; liste bu uygulamanın gönderdiği ve panelin onayladığı içerikleri gösterir."; }
+                                for s in root.slots: Rectangle {
+                                    height: 42px;
+                                    border-radius: 6px;
+                                    background: s.slot == root.save-slot ? Theme.primary-soft : transparent;
+                                    HorizontalLayout {
+                                        padding-left: 8px;
+                                        padding-right: 4px;
+                                        spacing: 8px;
+                                        Text { text: s.slot; width: 22px; font-weight: 700; vertical-alignment: center; color: Theme.text; }
+                                        VerticalLayout {
+                                            horizontal-stretch: 1;
+                                            alignment: center;
+                                            Text { text: s.content; overflow: elide; color: s.updated == "" ? Theme.muted : Theme.text; font-size: 12px; }
+                                            if s.updated != "": Text { text: (s.confirmed ? "✔ onaylı · " : "") + s.updated; font-size: 11px; color: s.confirmed ? Theme.success : Theme.muted; }
+                                        }
+                                        Button { text: "Göster"; clicked => { root.show-slot(s.slot); } }
+                                        Button { text: "Sil…"; clicked => { root.delete-slot(s.slot); } }
+                                    }
+                                }
+                            }
+                        }
+                        Card {
+                            VerticalLayout {
+                                padding: 16px;
+                                alignment: start;
+                                spacing: 8px;
+                                SectionTitle { text: "Gelişmiş: ham komut"; }
+                                Hint { text: "Onaltılık (hex) baytları doğrudan panele yazar; yanıtlar gösterilir. Yalnızca protokolü biliyorsanız kullanın."; }
+                                HorizontalLayout {
+                                    spacing: 8px;
+                                    LineEdit { text <=> root.raw-hex; placeholder-text: "05 00 04 80 46"; horizontal-stretch: 1; }
+                                    Button { text: "Gönder…"; clicked => { root.send-raw(); } }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ===== Page 4: Log =====
+            if root.page == 4: Card {
+                vertical-stretch: 1;
+                VerticalLayout {
+                    padding: 16px;                    spacing: 8px;
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Hint { text: "Ayrıntılı kayıt (BLE paketleri dahil): " + root.log-path; vertical-alignment: center; horizontal-stretch: 1; }
+                        Button { text: "Günlük dosyasını aç"; clicked => { root.open-log(); } }
+                        Button { text: "Veri klasörü"; clicked => { root.open-data-folder(); } }
+                    }
+                    ListView {
+                        vertical-stretch: 1;
+                        for l in root.logs: HorizontalLayout {
+                            padding-top: 4px;
+                            padding-bottom: 4px;
+                            spacing: 10px;
+                            Text { text: l.time; width: 64px; color: Theme.muted; font-size: 12px; font-family: "Consolas"; }
+                            Text {
+                                text: l.text;
+                                wrap: word-wrap;
+                                horizontal-stretch: 1;
+                                font-size: 12px;
+                                color: l.level == 1 ? Theme.success : l.level == 2 ? Theme.warn : l.level == 3 ? Theme.danger : Theme.text;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // ===== Modal dialog =====
+    if root.confirm-visible: Rectangle {
+        x: 0;
+        y: 0;
+        width: root.width;
+        height: root.height;
+        background: #0b1220a0;
+        TouchArea { }
+        Rectangle {
+            width: min(root.width - 80px, root.confirm-preview ? 760px : 520px);
+            height: dlg.preferred-height;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Theme.surface;
+            border-radius: 14px;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: #00000055;
+            dlg := VerticalLayout {
+                padding: 22px;
+                spacing: 12px;
+                Text { text: root.confirm-title; font-size: 18px; font-weight: 700; color: root.confirm-danger ? Theme.danger : Theme.text; }
+                if root.confirm-preview: LedPreview { height: 130px; source: root.preview; }
+                Text { text: root.confirm-text; wrap: word-wrap; color: Theme.text; }
+                if root.confirm-details != "": Rectangle {
+                    background: Theme.surface-alt;
+                    border-radius: 8px;
+                    HorizontalLayout {
+                        padding: 12px;
+                        Text { text: root.confirm-details; wrap: word-wrap; color: Theme.muted; font-size: 12px; }
+                    }
+                }
+                if root.confirm-warnings != "": Text { text: "⚠ " + root.confirm-warnings; color: Theme.warn; wrap: word-wrap; font-size: 12px; }
+                if root.confirm-show-dont-ask: CheckBox { text: "Bir daha sorma (Panel sayfasından yeniden açılabilir)"; checked <=> root.confirm-dont-ask; }
+                HorizontalLayout {
+                    spacing: 10px;
+                    alignment: end;
+                    Button { text: "Vazgeç"; clicked => { root.confirm-cancel(); } }
+                    if root.confirm-alt != "": Button { text: root.confirm-alt; clicked => { root.confirm-alternative(); } }
+                    Button { text: root.confirm-ok; primary: true; clicked => { root.confirm-accept(); } }
+                }
+            }
+        }
+    }
+}
